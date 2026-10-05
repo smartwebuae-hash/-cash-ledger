@@ -164,6 +164,10 @@ details.panel[open]>summary::after{content:"－"}
 .sheet tbody tr:nth-child(even) td{background:#eaf1fa}
 .sheet tr.tot td{background:#ffe699;font-weight:700;font-size:14px}
 .sheet .p{direction:ltr;font-variant-numeric:tabular-nums}
+.sheet .sum2{width:60%;margin:18px 0 0 auto;border-collapse:collapse;font-size:13px}
+.sheet .sum2 td{border:1px solid #b7c6d6;padding:5px 10px;height:auto}
+.sheet .sum2 td:first-child{background:#eaf1fa;font-weight:500}
+.sheet .sum2 tr.net td{background:#ffe699;font-weight:700}
 .sheet .sig{display:flex;justify-content:space-between;margin-top:34px;font-size:13px}
 @media print{
   body.printrep>.wrap,body.printrep .toast,body.printrep .viewer,body.printrep .repbar{display:none!important}
@@ -284,7 +288,7 @@ details.panel[open]>summary::after{content:"－"}
   </div>
 
   <div class="foot">
-    <button class="btn wa" id="waBtn" type="button">إرسال التقرير واتساب</button>
+    <button class="btn wa" id="waBtn" type="button">📲 إرسال الجرد واتساب</button>
     <button class="btn ghost" id="printBtn" type="button">طباعة</button>
   </div>
   <div class="foot">
@@ -307,8 +311,9 @@ details.panel[open]>summary::after{content:"－"}
       </select>
     </label>
     <div class="actions">
-      <button class="btn" type="button" id="rPrint">طباعة</button>
+      <button class="btn wa" type="button" id="rImg">إرسال صورة واتساب</button>
       <button class="btn wa" type="button" id="rPdf">إرسال PDF</button>
+      <button class="btn ghost" type="button" id="rPrint">طباعة</button>
       <button class="btn ghost" type="button" id="rClose">إغلاق</button>
     </div>
   </div>
@@ -606,6 +611,13 @@ $("fxApply").onclick=async()=>{
 
 /* ---------- التقرير ---------- */
 $("waBtn").onclick=()=>{
+  const last=new Date(viewY,viewM+1,0), today=new Date();
+  $("rFrom").value=`${viewY}-${String(viewM+1).padStart(2,"0")}-01`;
+  $("rTo").value=iso(viewY===today.getFullYear()&&viewM===today.getMonth()?today:last);
+  $("rKind").value="all"; $("rep").hidden=false; document.body.style.overflow="hidden"; buildReport();
+  toast("اختر الفترة والنوع، ثم اضغط إرسال صورة واتساب أو PDF");
+};
+const waTextOld=()=>{
   if(!entries.length){toast("لا يوجد تسجيلات لهذا الشهر");return}
   const t=sums(entries), cnt=k=>entries.filter(e=>e.kind===k).length;
   const grp=k=>{const g={};entries.filter(e=>e.kind===k).forEach(e=>{const c=e.category||"غير مصنّف";g[c]=(g[c]||0)+ +e.amount});return Object.entries(g).sort((a,b)=>b[1]-a[1]).map(([c,v])=>`• ${c}: ${fmt(v)}`).join("\n")||"• لا يوجد"};
@@ -643,6 +655,12 @@ async function buildReport(){
     else lines.push({name:e.kind==="expense"?(e.party||e.category):(e.category||e.party||KINDS[e.kind].label),qty:"",price:sign(e)*(+e.amount||0),note:notes(e)});
   });
   const total=lines.reduce((s,l)=>s+l.price,0);
+  let summary="";
+  if(k==="all"||k==="out"){
+    const t=sums(list), rowsS=(k==="all"?[["المبيعات",t.sale],["الذبائح",t.slaughter]]:[]).concat([["المشتريات",t.purchase],["المصروفات",t.expense]]);
+    summary=`<table class="sum2">${rowsS.map(([a,v])=>`<tr><td>${a}</td><td><span class="p">${fmt(v)}</span></td></tr>`).join("")}
+      <tr class="net"><td>${k==="all"?"الصافي":"إجمالي الخارج"}</td><td><span class="p">${fmt(k==="all"?t.net:t.out)}</span></td></tr></table>`;
+  }
   while(lines.length<20) lines.push(null);
   repTitle=REP_TITLES[k];
   $("sheet").innerHTML=`<div class="st">${repTitle}</div>
@@ -652,19 +670,36 @@ async function buildReport(){
       <tbody>${lines.map(l=>l?`<tr><td>${esc(l.name)}</td><td>${esc(l.qty)}</td><td><span class="p">${fmt(l.price)}</span></td><td>${esc(l.note)}</td></tr>`:`<tr><td></td><td></td><td></td><td></td></tr>`).join("")}
       <tr class="tot"><td>${k==="all"?"الصافي":"الإجمالي"}</td><td></td><td><span class="p">${fmt(total)}</span></td><td></td></tr></tbody>
     </table>
+    ${summary}
     <div class="sig"><span>توقيع المحاسب: ............</span><span>توقيع المدير: ............</span></div>`;
 }
 $("repBtn").onclick=()=>{const t=iso(new Date());$("rFrom").value=t;$("rTo").value=t;$("rep").hidden=false;document.body.style.overflow="hidden";buildReport()};
 $("rClose").onclick=()=>{$("rep").hidden=true;document.body.style.overflow=""};
 ["rFrom","rTo","rKind"].forEach(id=>$(id).onchange=buildReport);
 $("rPrint").onclick=()=>{document.body.classList.add("printrep");window.print();setTimeout(()=>document.body.classList.remove("printrep"),1500)};
+const loadScript=src=>new Promise((res,rej)=>{const s=document.createElement("script");s.src=src;s.onload=res;s.onerror=rej;document.head.appendChild(s)});
+async function shareFile(file,title){
+  if(navigator.canShare&&navigator.canShare({files:[file]})) await navigator.share({files:[file],title});
+  else {const a=document.createElement("a");a.href=URL.createObjectURL(file);a.download=file.name;a.click();toast("تم تنزيل الملف")}
+}
+$("rImg").onclick=async()=>{
+  const btn=$("rImg"), old=btn.textContent; btn.disabled=true; btn.textContent="جاري تجهيز الصورة…";
+  try{
+    if(!window.html2canvas) await loadScript("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js");
+    const canvas=await html2canvas($("sheet"),{scale:2,backgroundColor:"#ffffff"});
+    const blob=await new Promise(r=>canvas.toBlob(r,"image/jpeg",.92));
+    const name=`${repTitle}_${$("rFrom").value}${$("rTo").value!==$("rFrom").value?"_"+$("rTo").value:""}.jpg`.replace(/\s+/g,"_");
+    await shareFile(new File([blob],name,{type:"image/jpeg"}),repTitle);
+  }catch(e){ if(e&&e.name!=="AbortError") toast("تعذّر تجهيز الصورة: "+(e.message||e)); }
+  finally{btn.disabled=false;btn.textContent=old}
+};
 window.addEventListener("afterprint",()=>document.body.classList.remove("printrep"));
 $("rPdf").onclick=async()=>{
   const btn=$("rPdf"), old=btn.textContent; btn.disabled=true; btn.textContent="جاري تجهيز PDF…";
   try{
     if(!window.html2pdf) await new Promise((res,rej)=>{const s=document.createElement("script");s.src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js";s.onload=res;s.onerror=rej;document.head.appendChild(s)});
     const name=`${repTitle}_${$("rFrom").value}${$("rTo").value&&$("rTo").value!==$("rFrom").value?"_"+$("rTo").value:""}.pdf`.replace(/\s+/g,"_");
-    const blob=await html2pdf().set({margin:6,image:{type:"jpeg",quality:.96},html2canvas:{scale:2,backgroundColor:"#ffffff"},jsPDF:{unit:"mm",format:"a4",orientation:"portrait"}}).from($("sheet")).outputPdf("blob");
+    const blob=await html2pdf().set({margin:6,image:{type:"jpeg",quality:.96},html2canvas:{scale:2,backgroundColor:"#ffffff"},jsPDF:{unit:"mm",format:"a4",orientation:"portrait"},pagebreak:{mode:["css","legacy"],avoid:["tr",".sum2",".sig"]}}).from($("sheet")).outputPdf("blob");
     const file=new File([blob],name,{type:"application/pdf"});
     if(navigator.canShare&&navigator.canShare({files:[file]})) await navigator.share({files:[file],title:repTitle});
     else {const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;a.click();toast("تم تنزيل ملف PDF")}
