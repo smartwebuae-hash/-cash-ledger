@@ -258,17 +258,17 @@ details.panel[open]>summary::after{content:"－"}
       <label class="nsl">التصنيف<input type="text" id="cat" list="cats" placeholder="اختر أو اكتب"><datalist id="cats"></datalist></label>
       <label class="sl" hidden>رقم الهاتف<input type="tel" id="phone" inputmode="tel" placeholder="05xxxxxxxx" dir="ltr"></label>
       <button type="button" class="kopen sl" id="kashfDay" hidden>📄 كشف ذبايح هذا اليوم — طباعة أو واتساب PDF</button>
-      <button type="button" class="scan sl" id="scanSlBtn" hidden>📷 صوّر كشف الذبايح <small>— إضافة كل العملاء تلقائياً</small></button>
-      <input type="file" id="scanSlFile" accept="image/*" hidden>
+      <button type="button" class="scan sl" id="scanSlBtn" hidden>📷 صوّر كشف الذبايح <small>— صورة أو أكثر، كل العملاء تلقائياً</small></button>
+      <input type="file" id="scanSlFile" accept="image/*" multiple hidden>
       <div class="slrev" id="slRev" hidden></div>
       <label class="sl full" hidden>عدد الذبايح / النوع<input type="text" id="heads" list="headsList" placeholder="مثال: خروف/1، تيس/3، طبخ 5 ذبايح"><datalist id="headsList"><option value="خروف/1"><option value="خروف/2"><option value="تيس/1"><option value="تيس/2"><option value="تيس/3"><option value="طبخ ذبيحة"><option value="طبخ حوار"><option value="نصف ذبيحة"></datalist></label>
 
-      <button type="button" class="scan nsl" id="scanBtn">📷 صوّر الفاتورة <small>— تعبئة الأصناف تلقائياً</small></button>
+      <button type="button" class="scan nsl" id="scanBtn">📷 صوّر الفاتورة <small>— صورة أو أكثر للفاتورة الطويلة</small></button>
       <div class="slrev" id="saleRev" hidden></div>
-      <button type="button" class="scan salonly" id="scanMealsBtn" hidden>🍽 صوّر تقرير الأصناف المباعة <small>— عدد الوجبات لكل صنف</small></button>
-      <input type="file" id="scanMealsFile" accept="image/*" hidden>
+      <button type="button" class="scan salonly" id="scanMealsBtn" hidden>🍽 صوّر تقرير الأصناف المباعة <small>— صورة أو أكثر، عدد الوجبات لكل صنف</small></button>
+      <input type="file" id="scanMealsFile" accept="image/*" multiple hidden>
       <div class="slrev" id="mealsRev" hidden></div>
-      <input type="file" id="scanFile" accept="image/*" hidden>
+      <input type="file" id="scanFile" accept="image/*" multiple hidden>
 
       <div class="items nsl">
         <div class="cap"><span>الكمية</span><span>الوحدة</span><span>السعر</span></div>
@@ -497,7 +497,7 @@ function setKind(k){
   document.querySelectorAll(".nsl").forEach(el=>el.hidden=(k==="slaughter"));
   document.querySelectorAll(".sl").forEach(el=>el.hidden=(k!=="slaughter"));
   $("amtLabel").textContent=k==="slaughter"?"السعر":"المبلغ (درهم)";
-  $("scanBtn").innerHTML=k==="sale"?'📷 صوّر تقرير المبيعات اليومي <small>— من جهاز الكاشير (POS)</small>':'📷 صوّر الفاتورة <small>— تعبئة الأصناف تلقائياً</small>';
+  $("scanBtn").innerHTML=k==="sale"?'📷 صوّر تقرير المبيعات اليومي <small>— من جهاز الكاشير، صورة أو أكثر</small>':'📷 صوّر الفاتورة <small>— صورة أو أكثر للفاتورة الطويلة</small>';
   if(k!=="sale"){const r=document.getElementById("saleRev"); if(r) r.hidden=true; const m=document.getElementById("mealsRev"); if(m) m.hidden=true;}
   document.querySelectorAll(".salonly").forEach(el=>el.hidden=(k!=="sale"));
   if(k!=="slaughter"){const r=document.getElementById("slRev"); if(r){r.hidden=true;}}
@@ -535,9 +535,30 @@ function drawItems(){
 }
 $("addRow").onclick=()=>{items.push(blankItem()); drawItems(); $("itemRows").lastElementChild.querySelector("input").focus()};
 
+/* ---------- قراءة عدة صفحات ---------- */
+async function readMany(files,prompt,btn,what){
+  const out=[];
+  for(let i=0;i<files.length;i++){
+    const d=await callReader(files[i],prompt,btn,`⏳ جاري قراءة ${what}${files.length>1?` — صفحة ${i+1} من ${files.length}`:""}…`);
+    if(d) out.push(d); else if(files.length>1) toast(`تعذّرت قراءة الصفحة ${i+1}، كمّل بالباقي أو أعد تصويرها`);
+  }
+  return out;
+}
+async function uploadAll(files,day,prefix){
+  const urls=[]; if(!db) return urls;
+  for(const f of files){
+    const blob=await compress(f), path=`invoices/${day}/${prefix}-${Date.now()}-${Math.random().toString(36).slice(2,6)}.jpg`;
+    const {error}=await db.storage.from(BUCKET).upload(path,blob,{contentType:"image/jpeg"});
+    if(!error) urls.push(db.storage.from(BUCKET).getPublicUrl(path).data.publicUrl);
+  }
+  return urls;
+}
+const firstDate=res=>{const d=res.find(x=>/^\d{4}-\d{2}-\d{2}$/.test(x.date||""));return d?d.date:""};
+const askAppend=(n,what)=>n>0&&confirm(`فيه ${n} ${what} مقروءة من قبل. تبي تضيف الصفحة الجديدة لها؟\n(موافق = إضافة، إلغاء = استبدال)`);
+
 /* ---------- قراءة كشف الذبايح ---------- */
 const SL_PROMPT='هذه صورة كشف ذبايح (جدول عملاء). أرجع JSON فقط بهذا الشكل: {"date":"YYYY-MM-DD أو فارغ","rows":[{"name":"الاسم / المكان كما هو مكتوب","phone":"رقم الهاتف","heads":"عدد الذبايح أو النوع كما هو مكتوب مثل خروف/1 أو تيس/3 أو طبخ 8 ذبايح","payment":"طريقة الدفع: واحدة فقط من كاش أو فيزا أو تحويل بنكي","amount":0}]}. التاريخ في الكشف مكتوب يوم/شهر/سنة، حوّله إلى YYYY-MM-DD. طرق الدفع الموجودة فقط: كاش، فيزا، تحويل بنكي. كلمة فيزا قد تكون مكتوبة بخط يشبه فريا أو فورا فاكتبها فيزا. إذا كان الدفع مقسوماً (مثل مبلغ كاش ومبلغ تحويل) اكتبه كما هو. اقرأ كل الصفوف بالترتيب ولا تتخطى أي صف، وتجاهل الصفوف الفارغة. الأرقام إنجليزية بدون عملة.';
-let slRows=[], slFile=null;
+let slRows=[], slFiles=[];
 const normPay=p=>{p=String(p||"").trim();if(/\d/.test(p)&&/\//.test(p))return p;if(/تحويل|بنك/.test(p))return "تحويل بنكي";if(/كاش|كش|نقد/.test(p))return "كاش";if(/فيز|فري|فور|فيذ|بطاق|visa|master|ماستر/i.test(p))return "فيزا";if(/آجل|اجل/.test(p))return "آجل";return p||"كاش"};
 const PAYS=["كاش","فيزا","تحويل بنكي","تطبيق توصيل","آجل"];
 async function callReader(file,prompt,btn,label){
@@ -577,54 +598,55 @@ function drawSlRev(){
      <div class="actions"><button type="button" class="btn" id="slSaveAll">حفظ الكل (${slRows.length})</button><button type="button" class="btn ghost" id="slCancel">إلغاء</button></div>`;
   box.querySelectorAll("[data-f]").forEach(el=>{const h=()=>{slRows[+el.dataset.i][el.dataset.f]=el.value;$("slTot").textContent=fmt(slRows.reduce((s,r)=>s+(+r.amount||0),0))};el.oninput=h;el.onchange=h});
   box.querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>{slRows.splice(+b.dataset.rm,1);drawSlRev()});
-  $("slCancel").onclick=()=>{slRows=[];slFile=null;drawSlRev()};
+  $("slCancel").onclick=()=>{slRows=[];slFiles=[];drawSlRev()};
   $("slSaveAll").onclick=saveSlRows;
 }
 $("scanSlBtn").onclick=()=>{if(!db){toast("القراءة التلقائية تحتاج ربط Supabase");return}$("scanSlFile").click()};
 $("scanSlFile").onchange=async ev=>{
-  const file=ev.target.files[0]; ev.target.value=""; if(!file) return;
-  const data=await callReader(file,SL_PROMPT,$("scanSlBtn"),"⏳ جاري قراءة الكشف…");
-  if(!data) return;
-  if(!Array.isArray(data.rows)){toast("حدّث كود الدالة read-invoice في Supabase أولاً (النسخة الجديدة تدعم كشف الذبايح)");return}
-  const rows=data.rows.filter(r=>r&&(r.name||r.amount)).map(r=>({name:String(r.name||"").trim(),phone:String(r.phone||"").replace(/\s/g,""),heads:String(r.heads||"").trim(),payment:normPay(r.payment),amount:+r.amount||0}));
+  const files=[...ev.target.files]; ev.target.value=""; if(!files.length) return;
+  const res=await readMany(files,SL_PROMPT,$("scanSlBtn"),"الكشف");
+  if(!res.length) return;
+  if(!res.some(d=>Array.isArray(d.rows))){toast("حدّث كود الدالة read-invoice في Supabase أولاً (النسخة الجديدة تدعم كشف الذبايح)");return}
+  let rows=[]; res.forEach(d=>(d.rows||[]).filter(r=>r&&(r.name||r.amount)).forEach(r=>rows.push({name:String(r.name||"").trim(),phone:String(r.phone||"").replace(/\s/g,""),heads:String(r.heads||"").trim(),payment:normPay(r.payment),amount:+r.amount||0})));
   if(!rows.length){toast("لم أجد صفوفاً واضحة، جرّب صورة أوضح");return}
-  if(/^\d{4}-\d{2}-\d{2}$/.test(data.date||"")) $("date").value=data.date;
-  slRows=rows; slFile=file; drawSlRev();
-  toast(`تمت قراءة ${rows.length} عميل، راجع الأرقام ثم اضغط حفظ الكل`);
+  const append=askAppend(slRows.length,"صف");
+  let base=append?slRows.slice():[], dup=0;
+  rows.forEach(r=>{if(base.some(b=>b.name===r.name&&b.phone===r.phone&&+b.amount===+r.amount)){dup++;return} base.push(r)});
+  const dt=firstDate(res); if(dt&&!append) $("date").value=dt;
+  slRows=base; slFiles=(append?slFiles:[]).concat(files); drawSlRev();
+  toast(`تمت قراءة ${rows.length-dup} عميل${dup?` (وحذف ${dup} صف مكرر بين الصفحات)`:""} — المجموع الآن ${slRows.length}، راجع ثم احفظ`);
 };
 async function saveSlRows(){
   const btn=$("slSaveAll"); btn.disabled=true; btn.textContent="جاري الحفظ…";
   try{
     const bad=slRows.findIndex(r=>!r.name.trim()||!(+r.amount>0));
     if(bad>=0){toast(`الصف ${bad+1}: اكتب الاسم والسعر`);return}
-    let img=[];
-    if(slFile&&db){
-      const blob=await compress(slFile), path=`invoices/${$("date").value}/kashf-${Date.now()}.jpg`;
-      const {error}=await db.storage.from(BUCKET).upload(path,blob,{contentType:"image/jpeg"});
-      if(!error) img=[db.storage.from(BUCKET).getPublicUrl(path).data.publicUrl];
-    }
+    const img=await uploadAll(slFiles,$("date").value,"kashf");
     const recs=slRows.map(r=>({kind:"slaughter",inv_date:$("date").value,party:r.name.trim(),phone:r.phone.trim(),category:r.heads.trim(),payment:r.payment,amount:Math.round(+r.amount*100)/100,vat:0,ref_no:"",note:"",images:img,items:[]}));
     if(db){const {error}=await db.from(TABLE).insert(recs); if(error){toast("لم يتم الحفظ: "+error.message);return}}
     else recs.forEach(r=>memory.push({id:memory.reduce((m,x)=>Math.max(m,x.id),0)+1,...r}));
     toast(`تم حفظ ${recs.length} ذبيحة`);
     const d=new Date(recs[0].inv_date+"T00:00:00"); viewY=d.getFullYear(); viewM=d.getMonth();
-    slRows=[]; slFile=null; drawSlRev(); resetForm(); load();
+    slRows=[]; slFiles=[]; drawSlRev(); resetForm(); load();
   } finally { if(document.getElementById("slSaveAll")){btn.disabled=false;btn.textContent=`حفظ الكل (${slRows.length})`;} }
 }
 
 /* ---------- عدد الوجبات من تقرير الأصناف ---------- */
 const MEALS_PROMPT='هذه صورة تقرير مبيعات الأصناف لمطعم (مثل Item Sales أو Product Mix أو Sales by Item من جهاز الكاشير، أو قائمة مكتوبة باليد). أرجع JSON فقط بهذا الشكل: {"date":"YYYY-MM-DD أو فارغ","items":[{"category":"اسم التصنيف أو القسم","name":"اسم الصنف كما هو مكتوب","qty":0,"amount":0}]}. category هو عنوان القسم الذي يقع تحته الصنف في التقرير (مثل سلطات، دجاج، لحم، كنافة، مشروبات)، وإذا لم توجد أقسام في التقرير فصنّف كل صنف بنفسك في قسم مناسب من اسمه. qty هو عدد الوجبات أو الكمية المباعة من الصنف، amount هو مبلغ مبيعات الصنف إن وجد وإلا 0. اقرأ كل الأصناف ولا تتخطى أي صنف، وتجاهل سطور المجاميع وعناوين التصنيفات. التاريخ إن كان مكتوباً يوم/شهر/سنة حوّله إلى YYYY-MM-DD. الأرقام إنجليزية بدون عملة.';
-let mealRows=[], mealFile=null;
+let mealRows=[], mealFiles=[];
 $("scanMealsBtn").onclick=()=>{if(!db){toast("القراءة التلقائية تحتاج ربط Supabase");return}$("scanMealsFile").click()};
 $("scanMealsFile").onchange=async ev=>{
-  const file=ev.target.files[0]; ev.target.value=""; if(!file) return;
-  const data=await callReader(file,MEALS_PROMPT,$("scanMealsBtn"),"⏳ جاري عدّ الوجبات…");
-  if(!data) return;
-  const rows=(Array.isArray(data.items)?data.items:[]).filter(x=>x&&x.name&&+x.qty>0).map(x=>({cat:String(x.category||"أخرى").trim()||"أخرى",name:String(x.name).trim(),qty:+x.qty,amount:+x.amount||0}));
+  const files=[...ev.target.files]; ev.target.value=""; if(!files.length) return;
+  const res=await readMany(files,MEALS_PROMPT,$("scanMealsBtn"),"تقرير الأصناف");
+  if(!res.length) return;
+  let rows=[]; res.forEach(d=>(Array.isArray(d.items)?d.items:[]).filter(x=>x&&x.name&&+x.qty>0).forEach(x=>rows.push({cat:String(x.category||"أخرى").trim()||"أخرى",name:String(x.name).trim(),qty:+x.qty,amount:+x.amount||0})));
   if(!rows.length){toast("لم أجد أصنافاً واضحة، جرّب صورة أوضح");return}
-  if(/^\d{4}-\d{2}-\d{2}$/.test(data.date||"")) $("date").value=data.date;
-  mealRows=rows; mealFile=file; drawMealsRev();
-  toast(`تم عدّ ${rows.length} صنف — ${qfmt(rows.reduce((s,r)=>s+r.qty,0))} وجبة، راجع ثم احفظ`);
+  const append=askAppend(mealRows.length,"صنف");
+  let base=append?mealRows.slice():[], dup=0;
+  rows.forEach(r=>{const b=base.find(b=>b.name===r.name&&b.cat===r.cat);if(b){dup++;if(+r.qty>+b.qty){b.qty=r.qty;b.amount=r.amount}return} base.push(r)});
+  const dt=firstDate(res); if(dt&&!append) $("date").value=dt;
+  mealRows=base; mealFiles=(append?mealFiles:[]).concat(files); drawMealsRev();
+  toast(`تم عدّ ${mealRows.length} صنف — ${qfmt(mealRows.reduce((s,r)=>s+(+r.qty||0),0))} وجبة${dup?` (دمج ${dup} صنف مكرر بين الصفحات)`:""}، راجع ثم احفظ`);
 };
 function drawMealsRev(){
   const box=$("mealsRev");
@@ -646,7 +668,7 @@ function drawMealsRev(){
   box.querySelectorAll("[data-f]").forEach(el=>{const h=()=>{mealRows[+el.dataset.i][el.dataset.f]=el.value;$("mealTot").textContent=qfmt(tq())};el.oninput=h;el.onchange=h});
   box.querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>{mealRows.splice(+b.dataset.rm,1);drawMealsRev()});
   box.querySelectorAll("[data-cat]").forEach(inp=>inp.onchange=()=>{const old=inp.dataset.cat,nw=inp.value.trim()||"أخرى";mealRows.forEach(r=>{if((r.cat||"أخرى")===old)r.cat=nw});drawMealsRev()});
-  $("mealCancel").onclick=()=>{mealRows=[];mealFile=null;drawMealsRev()};
+  $("mealCancel").onclick=()=>{mealRows=[];mealFiles=[];drawMealsRev()};
   $("mealSave").onclick=saveMeals;
 }
 async function saveMeals(){
@@ -659,24 +681,19 @@ async function saveMeals(){
       const {data:ex}=await db.from(TABLE).select("id").eq("kind","meals").eq("inv_date",day);
       if(ex&&ex.length&&!confirm(`يوجد عدد وجبات محفوظ لتاريخ ${dmy(day)}. تبي تضيف هذا التقرير أيضاً؟`)) return;
     }
-    let img=[];
-    if(mealFile&&db){
-      const blob=await compress(mealFile), path=`invoices/${day}/meals-${Date.now()}.jpg`;
-      const {error}=await db.storage.from(BUCKET).upload(path,blob,{contentType:"image/jpeg"});
-      if(!error) img=[db.storage.from(BUCKET).getPublicUrl(path).data.publicUrl];
-    }
+    const img=await uploadAll(mealFiles,day,"meals");
     const rec={kind:"meals",inv_date:day,party:"تقرير الأصناف",category:"عدد الوجبات",payment:"",amount:Math.round(its.reduce((s,x)=>s+x.total,0)*100)/100,vat:0,ref_no:"",note:"",images:img,items:its};
     if(db){const {error}=await db.from(TABLE).insert(rec); if(error){toast("لم يتم الحفظ: "+error.message);return}}
     else memory.push({id:memory.reduce((m,x)=>Math.max(m,x.id),0)+1,...rec});
     toast(`تم حفظ ${qfmt(its.reduce((s,x)=>s+x.qty,0))} وجبة لتاريخ ${dmy(day)}`);
     const d=new Date(day+"T00:00:00"); viewY=d.getFullYear(); viewM=d.getMonth();
-    mealRows=[]; mealFile=null; drawMealsRev(); load();
+    mealRows=[]; mealFiles=[]; drawMealsRev(); load();
   } finally { if(document.getElementById("mealSave")){btn.disabled=false;btn.textContent="حفظ عدد الوجبات";} }
 }
 
 /* ---------- قراءة تقرير المبيعات اليومي (POS) ---------- */
 const SALE_PROMPT='هذه صورة تقرير مبيعات يومي من جهاز الكاشير (POS) لمطعم. أرجع JSON فقط بهذا الشكل: {"date":"YYYY-MM-DD","gross":0,"discounts":0,"net":0,"voids":0,"orders":0,"payments":[{"name":"اسم طريقة الدفع كما هو مكتوب","amount":0}]}. التاريخ هو Business Date أو تاريخ التقرير. gross هو Gross Sales، discounts هو Total Discounts، net هو Net Sales، voids هو Total Void، orders هو عدد الطلبات. خذ طرق الدفع من قسم Payments (مثل Cash و Visa و MasterCard و طلبات و كيتا) كل واحدة بمبلغها، ولا تأخذ Total Payments ولا Net Payments by Type. الأرقام إنجليزية بدون عملة.';
-let saleRows=[], saleFile=null, saleInfo=null;
+let saleRows=[], saleFiles=[], saleInfo=null;
 function mapSalePay(name){
   const n=String(name||"").trim();
   if(/cash|كاش|نقد/i.test(n)) return {party:"كاش",payment:"كاش",category:"مبيعات يومية"};
@@ -684,15 +701,18 @@ function mapSalePay(name){
   if(/visa|master|card|mada|amex|بطاق|فيزا|ماستر|apple|samsung/i.test(n)) return {party:n,payment:"فيزا",category:"مبيعات يومية"};
   return {party:n,payment:"كاش",category:"مبيعات يومية"};
 }
-async function scanSales(file){
-  const data=await callReader(file,SALE_PROMPT,$("scanBtn"),"⏳ جاري قراءة تقرير المبيعات…");
-  if(!data) return;
-  if(!Array.isArray(data.payments)){toast("حدّث كود الدالة read-invoice في Supabase أولاً");return}
-  const rows=data.payments.filter(p=>p&&+p.amount>0).map(p=>({...mapSalePay(p.name),amount:+p.amount}));
-  if(!rows.length){toast("لم أجد طرق دفع واضحة في التقرير، جرّب صورة أوضح");return}
-  if(/^\d{4}-\d{2}-\d{2}$/.test(data.date||"")) $("date").value=data.date;
-  saleRows=rows; saleFile=file; saleInfo={gross:+data.gross||0,discounts:+data.discounts||0,net:+data.net||0,voids:+data.voids||0,orders:+data.orders||0};
-  drawSaleRev(); toast(`تمت قراءة التقرير: ${rows.length} طرق دفع، راجع ثم احفظ`);
+async function scanSales(files){
+  const res=await readMany(files,SALE_PROMPT,$("scanBtn"),"تقرير المبيعات");
+  if(!res.length) return;
+  const append=askAppend(saleRows.length,"طريقة دفع");
+  let base=append?saleRows.slice():[];
+  res.forEach(d=>(Array.isArray(d.payments)?d.payments:[]).filter(p=>p&&+p.amount>0).forEach(p=>{const r={...mapSalePay(p.name),amount:+p.amount};if(!base.some(b=>b.party===r.party&&+b.amount===+r.amount))base.push(r)}));
+  if(!base.length){toast("لم أجد طرق دفع واضحة في التقرير، جرّب صورة أوضح");return}
+  const dt=firstDate(res); if(dt&&!append) $("date").value=dt;
+  const I=append&&saleInfo?{...saleInfo}:{gross:0,discounts:0,net:0,voids:0,orders:0};
+  res.forEach(d=>["gross","discounts","net","voids","orders"].forEach(k=>{if(!I[k]&&+d[k]) I[k]=+d[k]}));
+  saleRows=base; saleFiles=(append?saleFiles:[]).concat(files); saleInfo=I;
+  drawSaleRev(); toast(`تمت قراءة التقرير: ${base.length} طرق دفع، راجع ثم احفظ`);
 }
 function drawSaleRev(){
   const box=$("saleRev");
@@ -713,7 +733,7 @@ function drawSaleRev(){
      <div class="actions"><button type="button" class="btn" id="saleSave">حفظ مبيعات اليوم</button><button type="button" class="btn ghost" id="saleCancel">إلغاء</button></div>`;
   box.querySelectorAll("[data-f]").forEach(el=>{const h=()=>{saleRows[+el.dataset.i][el.dataset.f]=el.value;const s=saleRows.reduce((a,r)=>a+(+r.amount||0),0);$("saleTot").textContent=fmt(s);const ok2=!I.net||Math.abs(s-I.net)<0.5;const c=$("saleChk");c.style.color=ok2?"var(--sale)":"var(--expense)";c.textContent=ok2?"✓ مجموع طرق الدفع مطابق للصافي":"⚠ مجموع طرق الدفع لا يطابق الصافي ("+fmt(I.net)+") — راجع الأرقام"};el.oninput=h;el.onchange=h});
   box.querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>{saleRows.splice(+b.dataset.rm,1);drawSaleRev()});
-  $("saleCancel").onclick=()=>{saleRows=[];saleFile=null;saleInfo=null;drawSaleRev()};
+  $("saleCancel").onclick=()=>{saleRows=[];saleFiles=[];saleInfo=null;drawSaleRev()};
   $("saleSave").onclick=saveSales;
 }
 async function saveSales(){
@@ -724,12 +744,7 @@ async function saveSales(){
       const {data:ex}=await db.from(TABLE).select("id").eq("kind","sale").eq("inv_date",day).like("note","تقرير POS%");
       if(ex&&ex.length&&!confirm(`يوجد تقرير مبيعات محفوظ لتاريخ ${dmy(day)}. تبي تضيفه مرة ثانية؟`)) return;
     }
-    let img=[];
-    if(saleFile&&db){
-      const blob=await compress(saleFile), path=`invoices/${day}/pos-${Date.now()}.jpg`;
-      const {error}=await db.storage.from(BUCKET).upload(path,blob,{contentType:"image/jpeg"});
-      if(!error) img=[db.storage.from(BUCKET).getPublicUrl(path).data.publicUrl];
-    }
+    const img=await uploadAll(saleFiles,day,"pos");
     const I=saleInfo||{};
     const note=`تقرير POS — الإجمالي ${fmt(I.gross)}، الخصومات ${fmt(I.discounts)}، الإلغاءات ${fmt(I.voids)}${I.orders?`، ${I.orders} طلب`:""}`;
     const recs=saleRows.filter(r=>+r.amount>0).map(r=>({kind:"sale",inv_date:day,party:String(r.party).trim(),category:r.category||"مبيعات يومية",payment:r.payment,amount:Math.round(+r.amount*100)/100,vat:0,ref_no:"",note,images:img,items:[]}));
@@ -738,7 +753,7 @@ async function saveSales(){
     else recs.forEach(r=>memory.push({id:memory.reduce((m,x)=>Math.max(m,x.id),0)+1,...r}));
     toast(`تم حفظ مبيعات ${dmy(day)}: ${fmt(recs.reduce((s,r)=>s+r.amount,0))} درهم`);
     const d=new Date(day+"T00:00:00"); viewY=d.getFullYear(); viewM=d.getMonth();
-    saleRows=[]; saleFile=null; saleInfo=null; drawSaleRev(); resetForm(); load();
+    saleRows=[]; saleFiles=[]; saleInfo=null; drawSaleRev(); resetForm(); load();
   } finally { if(document.getElementById("saleSave")){btn.disabled=false;btn.textContent="حفظ مبيعات اليوم";} }
 }
 
@@ -820,39 +835,25 @@ $("viewer").onclick=ev=>{if(ev.target.id==="viewer")$("viewer").classList.remove
 const blobToB64=b=>new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result.split(",")[1]);fr.readAsDataURL(b)});
 $("scanBtn").onclick=()=>{if(!db){toast("القراءة التلقائية تحتاج ربط Supabase");return}$("scanFile").click()};
 $("scanFile").onchange=async ev=>{
-  const file=ev.target.files[0]; ev.target.value=""; if(!file) return;
-  if(kind==="sale"){ return scanSales(file); }
-  const btn=$("scanBtn"), old=btn.innerHTML; btn.disabled=true; btn.innerHTML="⏳ جاري قراءة الفاتورة…";
-  try{
-    const image=await blobToB64(await compress(file));
-    let data,error,msg="";
-    for(let attempt=0;attempt<3;attempt++){
-      ({data,error}=await db.functions.invoke("read-invoice",{body:{image,media_type:"image/jpeg",models:["gemini-flash-latest","gemini-flash-lite-latest","gemini-2.5-flash"]}}));
-      if(!error&&data&&!data.error) break;
-      msg=(data&&data.error)||(error&&error.message)||"خطأ";
-      try{const j=await error.context.json(); if(j&&j.error) msg=j.error}catch(_){}
-      const busy=/quota|rate|429|503|overload|UNAVAILABLE|RESOURCE_EXHAUSTED|demand|try again|غير مكتمل/i.test(msg);
-      if(!busy||attempt===2) break;
-      btn.innerHTML=`⏳ الخدمة مشغولة، إعادة المحاولة (${attempt+2}/3)…`;
-      await new Promise(r=>setTimeout(r,(attempt+1)*8000));
-    }
-    if(error||!data||data.error){
-      const busy=/quota|rate|429|503|overload|UNAVAILABLE|RESOURCE_EXHAUSTED|demand|try again|غير مكتمل/i.test(msg);
-      toast(busy?"الخدمة المجانية مشغولة أو وصلت الحد المؤقت، انتظر دقيقة وجرّب مرة ثانية":"تعذّرت قراءة الفاتورة: "+msg);
-      return;
-    }
-    const got=(data.items||[]).filter(x=>x&&(x.name||x.price)).map(x=>({name:String(x.name||""),qty:+x.qty||1,unit:UNITS.includes(x.unit)?x.unit:"حبة",price:Math.round(((+x.qty||1)*(+x.price||0))*100)/100}));
-    if(!got.length){toast("لم أجد أصنافاً واضحة، جرّب صورة أوضح");return}
-    items=got; drawItems();
-    if(data.party&&!$("party").value) $("party").value=data.party;
-    if(data.ref_no&&!$("ref").value) $("ref").value=data.ref_no;
-    if(/^\d{4}-\d{2}-\d{2}$/.test(data.date||"")) $("date").value=data.date;
-    if(data.vat_included) $("vat").checked=true;
-    photos.push({file,url:URL.createObjectURL(file)}); drawThumbs();
-    const diff=data.total?Math.abs(+data.total-itemsTotal()):0;
-    toast(diff>0.5?`تمت قراءة ${got.length} صنف — المجموع لا يطابق إجمالي الفاتورة (${fmt(data.total)})، راجع الأرقام`:`تمت قراءة ${got.length} صنف، راجع الأرقام قبل الحفظ`);
-  }catch(e){toast("تعذّرت قراءة الفاتورة: "+e.message)}
-  finally{btn.disabled=false;btn.innerHTML=old}
+  const files=[...ev.target.files]; ev.target.value=""; if(!files.length) return;
+  if(kind==="sale"){ return scanSales(files); }
+  const res=await readMany(files,undefined,$("scanBtn"),"الفاتورة");
+  if(!res.length) return;
+  let got=[]; res.forEach(d=>(d.items||[]).filter(x=>x&&(x.name||x.price)).forEach(x=>got.push({name:String(x.name||""),qty:+x.qty||1,unit:UNITS.includes(x.unit)?x.unit:"حبة",price:Math.round(((+x.qty||1)*(+x.price||0))*100)/100})));
+  if(!got.length){toast("لم أجد أصنافاً واضحة، جرّب صورة أوضح");return}
+  const existing=items.filter(it=>String(it.name).trim()||+it.price);
+  const append=askAppend(existing.length,"صنف");
+  let base=append?existing:[], dup=0;
+  got.forEach(g=>{if(base.some(b=>String(b.name).trim()===g.name.trim()&&+b.qty===+g.qty&&+b.price===+g.price)){dup++;return} base.push(g)});
+  items=base; drawItems();
+  const f=k=>{const d=res.find(x=>x[k]);return d?d[k]:""};
+  if(f("party")&&!$("party").value) $("party").value=f("party");
+  if(f("ref_no")&&!$("ref").value) $("ref").value=f("ref_no");
+  const dt=firstDate(res); if(dt&&!append) $("date").value=dt;
+  if(res.some(d=>d.vat_included)) $("vat").checked=true;
+  files.forEach(file=>photos.push({file,url:URL.createObjectURL(file)})); drawThumbs();
+  const last=[...res].reverse().find(d=>+d.total>0), diff=last?Math.abs(+last.total-itemsTotal()):0;
+  toast(`${files.length>1?`تمت قراءة ${files.length} صفحات — `:""}${items.length} صنف${dup?` (حذف ${dup} مكرر)`:""}`+(diff>0.5?` — المجموع لا يطابق إجمالي الفاتورة (${fmt(last.total)})، راجع الأرقام`:`، راجع الأرقام قبل الحفظ`));
 };
 
 /* ---------- المصروفات الثابتة ---------- */
