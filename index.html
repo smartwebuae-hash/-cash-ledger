@@ -547,8 +547,22 @@ $("scanFile").onchange=async ev=>{
   const btn=$("scanBtn"), old=btn.innerHTML; btn.disabled=true; btn.innerHTML="⏳ جاري قراءة الفاتورة…";
   try{
     const image=await blobToB64(await compress(file));
-    const {data,error}=await db.functions.invoke("read-invoice",{body:{image,media_type:"image/jpeg"}});
-    if(error||!data||data.error){toast("تعذّرت قراءة الفاتورة: "+((data&&data.error)||(error&&error.message)||"خطأ"));return}
+    let data,error,msg="";
+    for(let attempt=0;attempt<3;attempt++){
+      ({data,error}=await db.functions.invoke("read-invoice",{body:{image,media_type:"image/jpeg"}}));
+      if(!error&&data&&!data.error) break;
+      msg=(data&&data.error)||(error&&error.message)||"خطأ";
+      try{const j=await error.context.json(); if(j&&j.error) msg=j.error}catch(_){}
+      const busy=/quota|rate|429|503|overload|UNAVAILABLE|RESOURCE_EXHAUSTED/i.test(msg);
+      if(!busy||attempt===2) break;
+      btn.innerHTML=`⏳ الخدمة مشغولة، إعادة المحاولة (${attempt+2}/3)…`;
+      await new Promise(r=>setTimeout(r,(attempt+1)*8000));
+    }
+    if(error||!data||data.error){
+      const busy=/quota|rate|429|503|overload|UNAVAILABLE|RESOURCE_EXHAUSTED/i.test(msg);
+      toast(busy?"الخدمة المجانية مشغولة أو وصلت الحد المؤقت، انتظر دقيقة وجرّب مرة ثانية":"تعذّرت قراءة الفاتورة: "+msg);
+      return;
+    }
     const got=(data.items||[]).filter(x=>x&&(x.name||x.price)).map(x=>({name:String(x.name||""),qty:+x.qty||1,unit:UNITS.includes(x.unit)?x.unit:"حبة",price:+x.price||0}));
     if(!got.length){toast("لم أجد أصنافاً واضحة، جرّب صورة أوضح");return}
     items=got; drawItems();
