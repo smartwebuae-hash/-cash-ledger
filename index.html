@@ -68,10 +68,10 @@ input:focus,textarea:focus,select:focus,button:focus-visible{outline:2px solid v
 
 /* الأصناف */
 .items{grid-column:1/-1;border:1px solid var(--rule);border-radius:10px;overflow:hidden}
-.items .cap{display:grid;grid-template-columns:70px 1fr 90px 84px;gap:6px;padding:6px 8px;background:var(--soft);font-size:.74rem;color:var(--muted);font-weight:700}
+.items .cap{display:grid;grid-template-columns:80px 1fr 1.2fr;gap:6px;padding:6px 8px;background:var(--soft);font-size:.74rem;color:var(--muted);font-weight:700}
 .ir{border-top:1px solid var(--rule);padding:8px}
 .ir .r1{display:flex;gap:6px;align-items:center}
-.ir .r2{display:grid;grid-template-columns:70px 1fr 90px 84px;gap:6px;align-items:center;margin-top:6px}
+.ir .r2{display:grid;grid-template-columns:80px 1fr 1.2fr;gap:6px;align-items:center;margin-top:6px}
 .ir input,.ir select{margin:0;padding:8px 6px;font-size:.92rem}
 .ir .lt{direction:ltr;text-align:right;font-variant-numeric:tabular-nums;font-weight:700;font-size:.9rem}
 .x{flex:0 0 32px;width:32px;height:32px;border-radius:50%;border:1px solid var(--rule);background:#fff;color:var(--expense);cursor:pointer;font-size:16px}
@@ -142,7 +142,7 @@ details.panel[open]>summary::after{content:"－"}
   .four div:nth-child(n+3){border-top:1px solid rgba(255,255,255,.15)}
   .breakdown{grid-template-columns:1fr}
   .net b{font-size:1.45rem}
-  .items .cap,.ir .r2{grid-template-columns:58px 1fr 76px 74px}
+  .items .cap,.ir .r2{grid-template-columns:64px 1fr 1.2fr}
 }
 @media print{
   body{background:#fff} form,.month button,.foot,.banner,.toast,.viewer,.bar input,details.panel{display:none!important}
@@ -225,7 +225,7 @@ details.panel[open]>summary::after{content:"－"}
       <input type="file" id="scanFile" accept="image/*" hidden>
 
       <div class="items">
-        <div class="cap"><span>الكمية</span><span>الوحدة</span><span>سعر الوحدة</span><span>الإجمالي</span></div>
+        <div class="cap"><span>الكمية</span><span>الوحدة</span><span>السعر</span></div>
         <div id="itemRows"></div>
         <button type="button" class="addrow" id="addRow">+ إضافة صنف</button>
         <div class="sum"><span>إجمالي الفاتورة</span><span class="num" id="itemsSum">0.00</span></div>
@@ -441,7 +441,7 @@ document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>{tab=b.datase
 $("q").oninput=render;
 
 const blankItem=()=>({name:"",qty:1,unit:"حبة",price:""});
-const lineTotal=it=>(+it.qty||0)*(+it.price||0);
+const lineTotal=it=>+it.price||0;
 const itemsTotal=()=>items.reduce((s,it)=>s+lineTotal(it),0);
 function syncAmount(){
   const used=items.some(it=>String(it.name).trim()||+it.price);
@@ -456,11 +456,10 @@ function drawItems(){
     <div class="r2">
       <input type="number" data-i="${i}" data-f="qty" value="${it.qty}" step="any" min="0" inputmode="decimal" aria-label="الكمية">
       <select data-i="${i}" data-f="unit" aria-label="الوحدة">${UNITS.map(u=>`<option${u===it.unit?" selected":""}>${u}</option>`).join("")}</select>
-      <input type="number" data-i="${i}" data-f="price" value="${it.price}" step="0.01" min="0" inputmode="decimal" placeholder="0.00" aria-label="سعر الوحدة">
-      <span class="lt" id="lt${i}">${fmt(lineTotal(it))}</span>
+      <input type="number" data-i="${i}" data-f="price" value="${it.price}" step="0.01" min="0" inputmode="decimal" placeholder="السعر" aria-label="السعر">
     </div></div>`).join("");
   $("itemRows").querySelectorAll("input,select").forEach(el=>{
-    const h=()=>{const i=+el.dataset.i; items[i][el.dataset.f]=el.value; $("lt"+i).textContent=fmt(lineTotal(items[i])); syncAmount()};
+    const h=()=>{const i=+el.dataset.i; items[i][el.dataset.f]=el.value; syncAmount()};
     el.oninput=h; el.onchange=h;
   });
   $("itemRows").querySelectorAll("[data-x]").forEach(b=>b.onclick=()=>{items.splice(+b.dataset.x,1); if(!items.length) items.push(blankItem()); drawItems()});
@@ -479,7 +478,7 @@ function edit(id){
   $("date").value=e.inv_date; $("ref").value=e.ref_no||""; $("party").value=e.party||""; $("cat").value=e.category||"";
   $("pay").value=e.payment||"كاش"; $("vat").checked=(+e.vat||0)>0; $("note").value=e.note||"";
   photos=(e.images||[]).map(url=>({url})); removed=[]; drawThumbs();
-  items=(e.items&&e.items.length)?e.items.map(x=>({name:x.name||"",qty:x.qty,unit:x.unit||"حبة",price:x.price})):[blankItem()];
+  items=(e.items&&e.items.length)?e.items.map(x=>({name:x.name||"",qty:x.qty,unit:x.unit||"حبة",price:(x.total!=null?x.total:x.price)})):[blankItem()];
   drawItems(); if(!(e.items&&e.items.length)) $("amount").value=e.amount;
   $("formTitle").textContent=`تعديل ${KINDS[e.kind].label} ${KINDS[e.kind].prefix}-${e.id}`; $("saveBtn").textContent="حفظ التعديل"; $("delBtn").hidden=false;
   $("f").scrollIntoView({behavior:"smooth"});
@@ -489,7 +488,7 @@ $("f").onsubmit=async ev=>{
   ev.preventDefault();
   const btn=$("saveBtn"); btn.disabled=true; btn.textContent="جاري الحفظ…";
   try{
-    const clean=items.filter(it=>String(it.name).trim()||+it.price).map(it=>({name:String(it.name).trim(),qty:+it.qty||0,unit:it.unit||"حبة",price:+it.price||0,total:Math.round(lineTotal(it)*100)/100}));
+    const clean=items.filter(it=>String(it.name).trim()||+it.price).map(it=>({name:String(it.name).trim(),qty:+it.qty||0,unit:it.unit||"حبة",price:Math.round((+it.price||0)*100)/100,total:Math.round((+it.price||0)*100)/100}));
     const amount=clean.length?Math.round(itemsTotal()*100)/100:+$("amount").value;
     if(!(amount>0)){toast("أدخل الأصناف أو المبلغ");return}
     if(kind==="slaughter"&&!$("party").value.trim()){toast("اكتب اسم الزبون");return}
@@ -563,7 +562,7 @@ $("scanFile").onchange=async ev=>{
       toast(busy?"الخدمة المجانية مشغولة أو وصلت الحد المؤقت، انتظر دقيقة وجرّب مرة ثانية":"تعذّرت قراءة الفاتورة: "+msg);
       return;
     }
-    const got=(data.items||[]).filter(x=>x&&(x.name||x.price)).map(x=>({name:String(x.name||""),qty:+x.qty||1,unit:UNITS.includes(x.unit)?x.unit:"حبة",price:+x.price||0}));
+    const got=(data.items||[]).filter(x=>x&&(x.name||x.price)).map(x=>({name:String(x.name||""),qty:+x.qty||1,unit:UNITS.includes(x.unit)?x.unit:"حبة",price:Math.round(((+x.qty||1)*(+x.price||0))*100)/100}));
     if(!got.length){toast("لم أجد أصنافاً واضحة، جرّب صورة أوضح");return}
     items=got; drawItems();
     if(data.party&&!$("party").value) $("party").value=data.party;
