@@ -257,6 +257,7 @@ details.panel[open]>summary::after{content:"－"}
       <label class="sl full" hidden>عدد الذبايح / النوع<input type="text" id="heads" list="headsList" placeholder="مثال: خروف/1، تيس/3، طبخ 5 ذبايح"><datalist id="headsList"><option value="خروف/1"><option value="خروف/2"><option value="تيس/1"><option value="تيس/2"><option value="تيس/3"><option value="طبخ ذبيحة"><option value="طبخ حوار"><option value="نصف ذبيحة"></datalist></label>
 
       <button type="button" class="scan nsl" id="scanBtn">📷 صوّر الفاتورة <small>— تعبئة الأصناف تلقائياً</small></button>
+      <div class="slrev" id="saleRev" hidden></div>
       <input type="file" id="scanFile" accept="image/*" hidden>
 
       <div class="items nsl">
@@ -268,7 +269,7 @@ details.panel[open]>summary::after{content:"－"}
 
       <label><span id="amtLabel">المبلغ (درهم)</span><input type="number" id="amount" step="0.01" min="0" inputmode="decimal"></label>
       <label>طريقة الدفع
-        <select id="pay"><option>كاش</option><option>بطاقة</option><option>تحويل بنكي</option><option>فريا</option><option>آجل</option></select>
+        <select id="pay"><option>كاش</option><option>فيزا</option><option>تحويل بنكي</option><option>تطبيق توصيل</option><option>آجل</option></select>
       </label>
       <label class="check full nsl"><input type="checkbox" id="vat"> المبلغ شامل ضريبة القيمة المضافة 5%</label>
       <label class="full">ملاحظة<textarea id="note" rows="2"></textarea></label>
@@ -479,6 +480,8 @@ function setKind(k){
   document.querySelectorAll(".nsl").forEach(el=>el.hidden=(k==="slaughter"));
   document.querySelectorAll(".sl").forEach(el=>el.hidden=(k!=="slaughter"));
   $("amtLabel").textContent=k==="slaughter"?"السعر":"المبلغ (درهم)";
+  $("scanBtn").innerHTML=k==="sale"?'📷 صوّر تقرير المبيعات اليومي <small>— من جهاز الكاشير (POS)</small>':'📷 صوّر الفاتورة <small>— تعبئة الأصناف تلقائياً</small>';
+  if(k!=="sale"){const r=document.getElementById("saleRev"); if(r) r.hidden=true;}
   if(k!=="slaughter"){const r=document.getElementById("slRev"); if(r){r.hidden=true;}}
   if(k==="slaughter"&&typeof items!=="undefined"&&items.some(it=>String(it.name).trim()||+it.price)){items=[blankItem()];drawItems();}
   $("cats").innerHTML=KINDS[k].cats.map(c=>`<option value="${c}">`).join("");
@@ -515,10 +518,10 @@ function drawItems(){
 $("addRow").onclick=()=>{items.push(blankItem()); drawItems(); $("itemRows").lastElementChild.querySelector("input").focus()};
 
 /* ---------- قراءة كشف الذبايح ---------- */
-const SL_PROMPT='هذه صورة كشف ذبايح (جدول عملاء). أرجع JSON فقط بهذا الشكل: {"date":"YYYY-MM-DD أو فارغ","rows":[{"name":"الاسم / المكان كما هو مكتوب","phone":"رقم الهاتف","heads":"عدد الذبايح أو النوع كما هو مكتوب مثل خروف/1 أو تيس/3 أو طبخ 8 ذبايح","payment":"طريقة الدفع كما هي مثل كاش أو تحويل بنكي أو فريا","amount":0}]}. التاريخ في الكشف مكتوب يوم/شهر/سنة، حوّله إلى YYYY-MM-DD. اقرأ كل الصفوف بالترتيب ولا تتخطى أي صف، وتجاهل الصفوف الفارغة. الأرقام إنجليزية بدون عملة.';
+const SL_PROMPT='هذه صورة كشف ذبايح (جدول عملاء). أرجع JSON فقط بهذا الشكل: {"date":"YYYY-MM-DD أو فارغ","rows":[{"name":"الاسم / المكان كما هو مكتوب","phone":"رقم الهاتف","heads":"عدد الذبايح أو النوع كما هو مكتوب مثل خروف/1 أو تيس/3 أو طبخ 8 ذبايح","payment":"طريقة الدفع: واحدة فقط من كاش أو فيزا أو تحويل بنكي","amount":0}]}. التاريخ في الكشف مكتوب يوم/شهر/سنة، حوّله إلى YYYY-MM-DD. طرق الدفع الموجودة فقط: كاش، فيزا، تحويل بنكي. كلمة فيزا قد تكون مكتوبة بخط يشبه فريا أو فورا فاكتبها فيزا. إذا كان الدفع مقسوماً (مثل مبلغ كاش ومبلغ تحويل) اكتبه كما هو. اقرأ كل الصفوف بالترتيب ولا تتخطى أي صف، وتجاهل الصفوف الفارغة. الأرقام إنجليزية بدون عملة.';
 let slRows=[], slFile=null;
-const normPay=p=>{p=String(p||"").trim();if(/تحويل/.test(p))return "تحويل بنكي";if(/كاش|نقد/.test(p))return "كاش";if(/فري/.test(p))return "فريا";if(/بطاق|فيزا|visa/i.test(p))return "بطاقة";if(/آجل|اجل/.test(p))return "آجل";return p||"كاش"};
-const PAYS=["كاش","تحويل بنكي","فريا","بطاقة","آجل"];
+const normPay=p=>{p=String(p||"").trim();if(/\d/.test(p)&&/\//.test(p))return p;if(/تحويل|بنك/.test(p))return "تحويل بنكي";if(/كاش|كش|نقد/.test(p))return "كاش";if(/فيز|فري|فور|فيذ|بطاق|visa|master|ماستر/i.test(p))return "فيزا";if(/آجل|اجل/.test(p))return "آجل";return p||"كاش"};
+const PAYS=["كاش","فيزا","تحويل بنكي","تطبيق توصيل","آجل"];
 async function callReader(file,prompt,btn,label){
   const old=btn.innerHTML; btn.disabled=true; btn.innerHTML=label||"⏳ جاري القراءة…";
   try{
@@ -589,6 +592,74 @@ async function saveSlRows(){
     const d=new Date(recs[0].inv_date+"T00:00:00"); viewY=d.getFullYear(); viewM=d.getMonth();
     slRows=[]; slFile=null; drawSlRev(); resetForm(); load();
   } finally { if(document.getElementById("slSaveAll")){btn.disabled=false;btn.textContent=`حفظ الكل (${slRows.length})`;} }
+}
+
+/* ---------- قراءة تقرير المبيعات اليومي (POS) ---------- */
+const SALE_PROMPT='هذه صورة تقرير مبيعات يومي من جهاز الكاشير (POS) لمطعم. أرجع JSON فقط بهذا الشكل: {"date":"YYYY-MM-DD","gross":0,"discounts":0,"net":0,"voids":0,"orders":0,"payments":[{"name":"اسم طريقة الدفع كما هو مكتوب","amount":0}]}. التاريخ هو Business Date أو تاريخ التقرير. gross هو Gross Sales، discounts هو Total Discounts، net هو Net Sales، voids هو Total Void، orders هو عدد الطلبات. خذ طرق الدفع من قسم Payments (مثل Cash و Visa و MasterCard و طلبات و كيتا) كل واحدة بمبلغها، ولا تأخذ Total Payments ولا Net Payments by Type. الأرقام إنجليزية بدون عملة.';
+let saleRows=[], saleFile=null, saleInfo=null;
+function mapSalePay(name){
+  const n=String(name||"").trim();
+  if(/cash|كاش|نقد/i.test(n)) return {party:"كاش",payment:"كاش",category:"مبيعات يومية"};
+  if(/طلبات|talabat|كيتا|keeta|deliveroo|careem|noon|نون|hunger|instashop|زومات|zomato/i.test(n)) return {party:n,payment:"تطبيق توصيل",category:"تطبيقات توصيل"};
+  if(/visa|master|card|mada|amex|بطاق|فيزا|ماستر|apple|samsung/i.test(n)) return {party:n,payment:"فيزا",category:"مبيعات يومية"};
+  return {party:n,payment:"كاش",category:"مبيعات يومية"};
+}
+async function scanSales(file){
+  const data=await callReader(file,SALE_PROMPT,$("scanBtn"),"⏳ جاري قراءة تقرير المبيعات…");
+  if(!data) return;
+  if(!Array.isArray(data.payments)){toast("حدّث كود الدالة read-invoice في Supabase أولاً");return}
+  const rows=data.payments.filter(p=>p&&+p.amount>0).map(p=>({...mapSalePay(p.name),amount:+p.amount}));
+  if(!rows.length){toast("لم أجد طرق دفع واضحة في التقرير، جرّب صورة أوضح");return}
+  if(/^\d{4}-\d{2}-\d{2}$/.test(data.date||"")) $("date").value=data.date;
+  saleRows=rows; saleFile=file; saleInfo={gross:+data.gross||0,discounts:+data.discounts||0,net:+data.net||0,voids:+data.voids||0,orders:+data.orders||0};
+  drawSaleRev(); toast(`تمت قراءة التقرير: ${rows.length} طرق دفع، راجع ثم احفظ`);
+}
+function drawSaleRev(){
+  const box=$("saleRev");
+  if(!saleRows.length){box.hidden=true;box.innerHTML="";return}
+  const sum=saleRows.reduce((s,r)=>s+(+r.amount||0),0), I=saleInfo||{};
+  const ok=!I.net||Math.abs(sum-I.net)<0.5;
+  box.hidden=false;
+  box.innerHTML=`<div class="slh">تقرير مبيعات ${dmy($("date").value)}${I.orders?` — ${I.orders} طلب`:""}<br>
+    <small style="font-weight:500">الإجمالي ${fmt(I.gross)} · الخصومات ${fmt(I.discounts)} · الصافي ${fmt(I.net)} · الإلغاءات ${fmt(I.voids)}</small></div>`+
+    saleRows.map((r,i)=>`<div class="slr">
+      <input class="nm" data-i="${i}" data-f="party" value="${esc(r.party)}" aria-label="طريقة الدفع كما في التقرير">
+      <button type="button" class="x rm" data-rm="${i}" aria-label="حذف">×</button>
+      <select class="c1" data-i="${i}" data-f="payment" aria-label="طريقة الدفع">${[...new Set([...PAYS,r.payment])].map(p=>`<option${p===r.payment?" selected":""}>${esc(p)}</option>`).join("")}</select>
+      <input class="c2" type="number" data-i="${i}" data-f="amount" value="${r.amount}" step="0.01" min="0" inputmode="decimal" aria-label="المبلغ">
+    </div>`).join("")+
+    `<div class="slf"><span>المجموع</span><span class="num" id="saleTot">${fmt(sum)}</span></div>
+     <div id="saleChk" style="padding:8px 12px;font-size:.85rem;font-weight:700;color:${ok?"var(--sale)":"var(--expense)"}">${ok?"✓ مجموع طرق الدفع مطابق للصافي":"⚠ مجموع طرق الدفع لا يطابق الصافي ("+fmt(I.net)+") — راجع الأرقام"}</div>
+     <div class="actions"><button type="button" class="btn" id="saleSave">حفظ مبيعات اليوم</button><button type="button" class="btn ghost" id="saleCancel">إلغاء</button></div>`;
+  box.querySelectorAll("[data-f]").forEach(el=>{const h=()=>{saleRows[+el.dataset.i][el.dataset.f]=el.value;const s=saleRows.reduce((a,r)=>a+(+r.amount||0),0);$("saleTot").textContent=fmt(s);const ok2=!I.net||Math.abs(s-I.net)<0.5;const c=$("saleChk");c.style.color=ok2?"var(--sale)":"var(--expense)";c.textContent=ok2?"✓ مجموع طرق الدفع مطابق للصافي":"⚠ مجموع طرق الدفع لا يطابق الصافي ("+fmt(I.net)+") — راجع الأرقام"};el.oninput=h;el.onchange=h});
+  box.querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>{saleRows.splice(+b.dataset.rm,1);drawSaleRev()});
+  $("saleCancel").onclick=()=>{saleRows=[];saleFile=null;saleInfo=null;drawSaleRev()};
+  $("saleSave").onclick=saveSales;
+}
+async function saveSales(){
+  const btn=$("saleSave"); btn.disabled=true; btn.textContent="جاري الحفظ…";
+  try{
+    const day=$("date").value;
+    if(db){
+      const {data:ex}=await db.from(TABLE).select("id").eq("kind","sale").eq("inv_date",day).like("note","تقرير POS%");
+      if(ex&&ex.length&&!confirm(`يوجد تقرير مبيعات محفوظ لتاريخ ${dmy(day)}. تبي تضيفه مرة ثانية؟`)) return;
+    }
+    let img=[];
+    if(saleFile&&db){
+      const blob=await compress(saleFile), path=`invoices/${day}/pos-${Date.now()}.jpg`;
+      const {error}=await db.storage.from(BUCKET).upload(path,blob,{contentType:"image/jpeg"});
+      if(!error) img=[db.storage.from(BUCKET).getPublicUrl(path).data.publicUrl];
+    }
+    const I=saleInfo||{};
+    const note=`تقرير POS — الإجمالي ${fmt(I.gross)}، الخصومات ${fmt(I.discounts)}، الإلغاءات ${fmt(I.voids)}${I.orders?`، ${I.orders} طلب`:""}`;
+    const recs=saleRows.filter(r=>+r.amount>0).map(r=>({kind:"sale",inv_date:day,party:String(r.party).trim(),category:r.category||"مبيعات يومية",payment:r.payment,amount:Math.round(+r.amount*100)/100,vat:0,ref_no:"",note,images:img,items:[]}));
+    if(!recs.length){toast("لا توجد مبالغ للحفظ");return}
+    if(db){const {error}=await db.from(TABLE).insert(recs); if(error){toast("لم يتم الحفظ: "+error.message);return}}
+    else recs.forEach(r=>memory.push({id:memory.reduce((m,x)=>Math.max(m,x.id),0)+1,...r}));
+    toast(`تم حفظ مبيعات ${dmy(day)}: ${fmt(recs.reduce((s,r)=>s+r.amount,0))} درهم`);
+    const d=new Date(day+"T00:00:00"); viewY=d.getFullYear(); viewM=d.getMonth();
+    saleRows=[]; saleFile=null; saleInfo=null; drawSaleRev(); resetForm(); load();
+  } finally { if(document.getElementById("saleSave")){btn.disabled=false;btn.textContent="حفظ مبيعات اليوم";} }
 }
 
 function resetForm(){
@@ -670,6 +741,7 @@ const blobToB64=b=>new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.
 $("scanBtn").onclick=()=>{if(!db){toast("القراءة التلقائية تحتاج ربط Supabase");return}$("scanFile").click()};
 $("scanFile").onchange=async ev=>{
   const file=ev.target.files[0]; ev.target.value=""; if(!file) return;
+  if(kind==="sale"){ return scanSales(file); }
   const btn=$("scanBtn"), old=btn.innerHTML; btn.disabled=true; btn.innerHTML="⏳ جاري قراءة الفاتورة…";
   try{
     const image=await blobToB64(await compress(file));
