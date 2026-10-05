@@ -107,7 +107,7 @@ details.panel[open]>summary::after{content:"－"}
 .dh{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:8px 12px;background:var(--soft);border-bottom:1px solid var(--rule);font-size:.84rem;position:sticky;top:0}
 .dh strong{font-weight:700}
 .dh .dt{display:flex;gap:10px}
-.row{display:grid;grid-template-columns:1fr auto;gap:0 10px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--rule);cursor:pointer}
+.row{display:grid;grid-template-columns:1fr auto 40px;gap:0 10px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--rule);cursor:pointer}
 .row:hover{background:#f6f9fc}
 .what{min-width:0}
 .what strong{font-weight:500;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -168,6 +168,12 @@ details.panel[open]>summary::after{content:"－"}
 .sheet .sum2 td{border:1px solid #b7c6d6;padding:5px 10px;height:auto}
 .sheet .sum2 td:first-child{background:#eaf1fa;font-weight:500}
 .sheet .sum2 tr.net td{background:#ffe699;font-weight:700}
+.rep.single .repbar label{display:none}
+.pr{width:36px;height:36px;border-radius:50%;border:1px solid var(--rule);background:#fff;cursor:pointer;font-size:16px;line-height:1}
+.sheet .info{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:14px}
+.sheet .info td{border:1px solid #b7c6d6;padding:5px 10px;height:auto;text-align:right}
+.sheet .info td.k{background:#eaf1fa;font-weight:500;width:18%}
+.sheet .inote{margin-top:12px;font-size:13px}
 .sheet .sig{display:flex;justify-content:space-between;margin-top:34px;font-size:13px}
 @media print{
   body.printrep>.wrap,body.printrep .toast,body.printrep .viewer,body.printrep .repbar{display:none!important}
@@ -243,6 +249,7 @@ details.panel[open]>summary::after{content:"－"}
     <div class="thumbs" id="thumbs"></div>
     <div class="actions">
       <button class="btn" type="submit" id="saveBtn">حفظ</button>
+      <button class="btn ghost" type="button" id="invPrint" hidden>🖨 طباعة</button>
       <button class="btn del" type="button" id="delBtn" hidden>حذف</button>
       <button class="btn ghost" type="button" id="clearBtn">جديد</button>
     </div>
@@ -412,9 +419,11 @@ function render(){
         <span class="what"><strong>${esc(title)}</strong>
           <span class="meta"><span class="tag ${e.kind}">${K.label} ${K.prefix}-${e.id}</span>${sub}${e.fixed_id?" · ثابت":""}${(e.images||[]).length?` · 📎${e.images.length}`:""}</span></span>
         <span class="amt num ${e.kind}-c">${isIncome(e.kind)?"+":"−"}${fmt(e.amount)}</span>
+        <button type="button" class="pr" data-pr="${e.id}" aria-label="طباعة الفاتورة ${K.prefix}-${e.id}" title="طباعة الفاتورة">🖨</button>
       </div>`}).join("")
   }).join(""):`<div class="empty">لا يوجد تسجيلات${tab!=="all"?" من هذا النوع":""} لهذا الشهر.</div>`;
-  document.querySelectorAll(".row").forEach(r=>{const o=()=>edit(r.dataset.id);r.onclick=o;r.onkeydown=ev=>{if(ev.key==="Enter")o()}});
+  document.querySelectorAll(".row").forEach(r=>{const o=()=>edit(r.dataset.id);r.onclick=o;r.onkeydown=ev=>{if(ev.key==="Enter"&&ev.target===r)o()}});
+  document.querySelectorAll("[data-pr]").forEach(b=>b.onclick=ev=>{ev.stopPropagation();const e=entries.find(x=>String(x.id)===b.dataset.pr);if(e)openInvoice(e)});
 
   const g=(k,field)=>entries.filter(e=>e.kind===k).reduce((a,e)=>{const key=e[field]||"غير محدد";a[key]=(a[key]||0)+ +e.amount;return a},{});
   bars("bP",g("purchase","category"),COLORS.purchase);
@@ -470,7 +479,7 @@ $("addRow").onclick=()=>{items.push(blankItem()); drawItems(); $("itemRows").las
 function resetForm(){
   editingId=null; const k=kind; $("f").reset(); setKind(k); $("date").value=iso(new Date());
   photos=[]; removed=[]; drawThumbs(); items=[blankItem()]; drawItems();
-  $("formTitle").textContent="تسجيل جديد"; $("saveBtn").textContent="حفظ"; $("delBtn").hidden=true;
+  $("formTitle").textContent="تسجيل جديد"; $("saveBtn").textContent="حفظ"; $("delBtn").hidden=true; $("invPrint").hidden=true;
 }
 function edit(id){
   const e=entries.find(x=>String(x.id)===String(id)); if(!e) return;
@@ -480,7 +489,7 @@ function edit(id){
   photos=(e.images||[]).map(url=>({url})); removed=[]; drawThumbs();
   items=(e.items&&e.items.length)?e.items.map(x=>({name:x.name||"",qty:x.qty,unit:x.unit||"حبة",price:(x.total!=null?x.total:x.price)})):[blankItem()];
   drawItems(); if(!(e.items&&e.items.length)) $("amount").value=e.amount;
-  $("formTitle").textContent=`تعديل ${KINDS[e.kind].label} ${KINDS[e.kind].prefix}-${e.id}`; $("saveBtn").textContent="حفظ التعديل"; $("delBtn").hidden=false;
+  $("formTitle").textContent=`تعديل ${KINDS[e.kind].label} ${KINDS[e.kind].prefix}-${e.id}`; $("saveBtn").textContent="حفظ التعديل"; $("delBtn").hidden=false; $("invPrint").hidden=false;
   $("f").scrollIntoView({behavior:"smooth"});
 }
 
@@ -627,6 +636,7 @@ $("waBtn").onclick=()=>{
   const last=new Date(viewY,viewM+1,0), today=new Date();
   $("rFrom").value=`${viewY}-${String(viewM+1).padStart(2,"0")}-01`;
   $("rTo").value=iso(viewY===today.getFullYear()&&viewM===today.getMonth()?today:last);
+  repSingle=null; $("rep").classList.remove("single");
   $("rKind").value="all"; $("rep").hidden=false; document.body.style.overflow="hidden"; buildReport();
   toast("اختر الفترة والنوع، ثم اضغط إرسال صورة واتساب أو PDF");
 };
@@ -647,7 +657,7 @@ $("printBtn").onclick=()=>window.print();
 /* ---------- صفحة الجرد ---------- */
 const REP_TITLES={out:"جرد المشتريات",purchase:"جرد المشتريات",expense:"جرد المصروفات",sale:"جرد المبيعات",slaughter:"جرد الذبائح",all:"جرد الحسابات"};
 const slashDate=s=>{const [y,m,d]=s.split("-");return `${y}/${+m}/${+d}`};
-let repTitle="";
+let repTitle="", repSingle=null;
 async function buildReport(){
   let from=$("rFrom").value, to=$("rTo").value; const k=$("rKind").value;
   if(!from) from=to; if(!to) to=from; if(from>to){[from,to]=[to,from]}
@@ -686,9 +696,32 @@ async function buildReport(){
     ${summary}
     <div class="sig"><span>توقيع المحاسب: ............</span><span>توقيع المدير: ............</span></div>`;
 }
-$("repBtn").onclick=()=>{const t=iso(new Date());$("rFrom").value=t;$("rTo").value=t;$("rep").hidden=false;document.body.style.overflow="hidden";buildReport()};
+$("repBtn").onclick=()=>{repSingle=null;$("rep").classList.remove("single");const t=iso(new Date());$("rFrom").value=t;$("rTo").value=t;$("rep").hidden=false;document.body.style.overflow="hidden";buildReport()};
 $("rClose").onclick=()=>{$("rep").hidden=true;document.body.style.overflow=""};
-["rFrom","rTo","rKind"].forEach(id=>$(id).onchange=buildReport);
+["rFrom","rTo","rKind"].forEach(id=>$(id).onchange=()=>{repSingle=null;$("rep").classList.remove("single");buildReport()});
+$("invPrint").onclick=()=>{const e=entries.find(x=>x.id===editingId);if(e)openInvoice(e)};
+function openInvoice(e){
+  const K=KINDS[e.kind];
+  repSingle=e; repTitle=`فاتورة ${K.label} ${K.prefix}-${e.id}`;
+  const its=(e.items||[]).filter(x=>x.name||x.total);
+  const lines=its.length?its.map(x=>({name:x.name,qty:x.qty?`${x.unit||""} ${qfmt(x.qty)}`:"",price:+(x.total!=null?x.total:x.price)||0}))
+    :[{name:e.category||e.party||K.label,qty:"",price:+e.amount||0}];
+  while(lines.length<10) lines.push(null);
+  const info=[[K.party,e.party],["رقم الفاتورة",e.ref_no],["طريقة الدفع",e.payment],["التصنيف",e.category]].filter(r=>r[1]);
+  $("sheet").innerHTML=`<div class="st">${repTitle}</div>
+    <div class="sd">التاريخ: ${slashDate(e.inv_date)}</div>
+    ${info.length?`<table class="info">${info.map(([a,v])=>`<tr><td class="k">${esc(a)}</td><td>${esc(v)}</td></tr>`).join("")}</table>`:""}
+    <table><colgroup><col style="width:52%"><col style="width:24%"><col style="width:24%"></colgroup>
+      <thead><tr><th>الصنف</th><th>الكمية</th><th>السعر</th></tr></thead>
+      <tbody>${lines.map(l=>l?`<tr><td>${esc(l.name)}</td><td>${esc(l.qty)}</td><td><span class="p">${fmt(l.price)}</span></td></tr>`:`<tr><td></td><td></td><td></td></tr>`).join("")}
+      ${+e.vat?`<tr><td>منها ضريبة القيمة المضافة 5%</td><td></td><td><span class="p">${fmt(e.vat)}</span></td></tr>`:""}
+      <tr class="tot"><td>الإجمالي</td><td></td><td><span class="p">${fmt(e.amount)}</span></td></tr></tbody>
+    </table>
+    ${e.note?`<div class="inote"><b>ملاحظة:</b> ${esc(e.note)}</div>`:""}
+    <div class="sig"><span>توقيع المحاسب: ............</span><span>توقيع المدير: ............</span></div>`;
+  $("rep").classList.add("single"); $("rep").hidden=false; document.body.style.overflow="hidden";
+}
+const repName=ext=>(repSingle?`${repTitle}_${repSingle.inv_date}`:`${repTitle}_${$("rFrom").value}${$("rTo").value&&$("rTo").value!==$("rFrom").value?"_"+$("rTo").value:""}`).replace(/\s+/g,"_")+"."+ext;
 $("rPrint").onclick=()=>{document.body.classList.add("printrep");window.print();setTimeout(()=>document.body.classList.remove("printrep"),1500)};
 const loadScript=src=>new Promise((res,rej)=>{const s=document.createElement("script");s.src=src;s.onload=res;s.onerror=rej;document.head.appendChild(s)});
 async function shareFile(file,title){
@@ -701,7 +734,7 @@ $("rImg").onclick=async()=>{
     if(!window.html2canvas) await loadScript("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js");
     const canvas=await html2canvas($("sheet"),{scale:2,backgroundColor:"#ffffff"});
     const blob=await new Promise(r=>canvas.toBlob(r,"image/jpeg",.92));
-    const name=`${repTitle}_${$("rFrom").value}${$("rTo").value!==$("rFrom").value?"_"+$("rTo").value:""}.jpg`.replace(/\s+/g,"_");
+    const name=repName("jpg");
     await shareFile(new File([blob],name,{type:"image/jpeg"}),repTitle);
   }catch(e){ if(e&&e.name!=="AbortError") toast("تعذّر تجهيز الصورة: "+(e.message||e)); }
   finally{btn.disabled=false;btn.textContent=old}
@@ -711,7 +744,7 @@ $("rPdf").onclick=async()=>{
   const btn=$("rPdf"), old=btn.textContent; btn.disabled=true; btn.textContent="جاري تجهيز PDF…";
   try{
     if(!window.html2pdf) await new Promise((res,rej)=>{const s=document.createElement("script");s.src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js";s.onload=res;s.onerror=rej;document.head.appendChild(s)});
-    const name=`${repTitle}_${$("rFrom").value}${$("rTo").value&&$("rTo").value!==$("rFrom").value?"_"+$("rTo").value:""}.pdf`.replace(/\s+/g,"_");
+    const name=repName("pdf");
     const blob=await html2pdf().set({margin:6,image:{type:"jpeg",quality:.96},html2canvas:{scale:2,backgroundColor:"#ffffff"},jsPDF:{unit:"mm",format:"a4",orientation:"portrait"},pagebreak:{mode:["css","legacy"],avoid:["tr",".sum2",".sig"]}}).from($("sheet")).outputPdf("blob");
     const file=new File([blob],name,{type:"application/pdf"});
     if(navigator.canShare&&navigator.canShare({files:[file]})) await navigator.share({files:[file],title:repTitle});
