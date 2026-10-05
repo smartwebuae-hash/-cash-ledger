@@ -184,6 +184,17 @@ details.panel[open]>summary::after{content:"－"}
 .cath{font-weight:700;color:#5b2d8a;margin:12px 0 6px;padding-bottom:4px;border-bottom:1px solid #e3d6f0;display:flex;justify-content:space-between;font-size:.88rem}
 .sheet tr.cat td{background:#5b2d8a!important;color:#fff;font-weight:700;text-align:right}
 .sheet tr.csub td{background:#efe7f7!important;font-weight:700}
+.kbar{display:flex;flex-wrap:wrap;gap:6px;padding:8px 10px;border-bottom:1px solid var(--rule);background:#fff}
+.kb{flex:1 1 calc(50% - 6px);display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding:7px 10px;border-radius:10px;border:1.5px solid var(--rule);background:#fff;font:inherit;font-size:.8rem;cursor:pointer;color:var(--ink);text-align:right}
+.kb b{font-size:.98rem}
+.kb.sale{border-color:var(--sale);color:var(--sale)}.kb.purchase{border-color:var(--purchase);color:var(--purchase)}
+.kb.expense{border-color:var(--expense);color:var(--expense)}.kb.slaughter{border-color:var(--slaughter);color:var(--slaughter)}.kb.meals{border-color:#5b2d8a;color:#5b2d8a}
+.kb.sale.on{background:var(--sale-bg)}.kb.purchase.on{background:var(--purchase-bg)}.kb.expense.on{background:var(--expense-bg)}.kb.slaughter.on{background:var(--slaughter-bg)}.kb.meals.on{background:#efe7f7}
+.kpanel{border-bottom:2px solid var(--rule)}
+.dsum{display:flex;justify-content:space-between;gap:8px;padding:10px 12px;background:var(--soft);font-weight:700;font-size:.88rem}
+.ilist{padding:0 12px 8px 52px;margin-top:-4px;border-bottom:1px solid var(--rule)}
+.ilist div{display:flex;justify-content:space-between;gap:8px;font-size:.8rem;color:var(--muted);padding:2px 0;border-bottom:1px dashed #e6edf3}
+.ilist div:last-child{border-bottom:0}
 .slrev{grid-column:1/-1;border:1.5px solid var(--slaughter);border-radius:10px;overflow:hidden;background:#fff}
 .slrev .slh{background:var(--slaughter-bg);color:var(--slaughter);font-weight:700;padding:10px 12px;font-size:.92rem}
 .slr{border-top:1px solid var(--rule);padding:8px;display:grid;grid-template-columns:1fr 1fr 32px;gap:6px;align-items:center}
@@ -399,6 +410,7 @@ const esc = s => String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">"
 const iso = d => d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
 
 let db=null, memory=[], memFixed=[], entries=[], fixed=[], editingId=null, kind="sale", tab="all", photos=[], removed=[], items=[];
+const openK={};
 const now=new Date(); let viewY=now.getFullYear(), viewM=now.getMonth();
 
 let toastT;
@@ -448,26 +460,38 @@ function render(){
 
   const q=$("q").value.trim().toLowerCase();
   const list=entries.filter(e=>(tab==="all"||e.kind===tab)&&(!q||[e.party,e.category,e.ref_no,e.note,e.payment,e.phone,...(e.items||[]).map(x=>x.name)].join(" ").toLowerCase().includes(q)));
-  // تجميع حسب التاريخ
+  // تجميع حسب التاريخ مع أزرار لكل نوع
   const byDate={}; list.forEach(e=>(byDate[e.inv_date]=byDate[e.inv_date]||[]).push(e));
   const dates=Object.keys(byDate).sort().reverse();
+  const ORDER=["sale","slaughter","purchase","expense","meals"];
+  const mealsQty=arr=>arr.reduce((s,e)=>s+(e.items||[]).reduce((a,x)=>a+(+x.qty||0),0),0);
+  const rowHtml=e=>{
+    const K=KINDS[e.kind]||KINDS.sale, names=(e.items||[]).filter(x=>x.name);
+    const sl=e.kind==="slaughter";
+    const title=sl?(e.party||"ذبيحة"):names.length?names.slice(0,2).map(itemText).join("، ")+(names.length>2?` +${names.length-2}`:""):(e.category||K.label);
+    const sub=(sl?[e.category,e.phone,e.payment]:[names.length?e.category:"",e.party,e.ref_no?("#"+e.ref_no):"",e.payment]).filter(Boolean).map(esc).join(" · ");
+    const det=names.length>1||(names.length===1&&e.kind!=="meals")?`<div class="ilist">${names.map(x=>`<div><span>${esc(x.name)}${x.qty?` <small>(${qfmt(x.qty)} ${esc(x.unit||"")})</small>`:""}</span><b class="n">${e.kind==="meals"?(x.total?fmt(x.total):""):fmt(x.total!=null?x.total:x.price)}</b></div>`).join("")}</div>`:"";
+    return `<div class="row" data-id="${e.id}" tabindex="0">
+      <span class="what"><strong>${esc(title)}</strong>
+        <span class="meta"><span class="tag ${e.kind}">${K.label} ${K.prefix}-${e.id}</span>${sub}${e.fixed_id?" · ثابت":""}${(e.images||[]).length?` · 📎${e.images.length}`:""}</span></span>
+      <span class="amt num ${e.kind}-c">${e.kind==="meals"?`${qfmt((e.items||[]).reduce((s,x)=>s+(+x.qty||0),0))} وجبة`:(isIncome(e.kind)?"+":"−")+fmt(e.amount)}</span>
+      <button type="button" class="pr" data-pr="${e.id}" aria-label="طباعة الفاتورة ${K.prefix}-${e.id}" title="طباعة الفاتورة">🖨</button>
+    </div>${det}`;
+  };
+  const forceOpen=!!q||tab!=="all";
   $("rows").innerHTML=dates.length?dates.map(dt=>{
     const d=new Date(dt+"T00:00:00"), s=sums(byDate[dt]);
-    return `<div class="dh"><strong>${days[d.getDay()]} ${d.getDate()} ${months[d.getMonth()]}</strong>
+    const groups=ORDER.filter(k=>byDate[dt].some(e=>e.kind===k));
+    const head=`<div class="dh"><strong>${days[d.getDay()]} ${d.getDate()} ${months[d.getMonth()]}</strong>
       ${byDate[dt].some(x=>x.kind==="slaughter")?`<button type="button" class="kbtn" data-kday="${dt}">🐑 كشف ذبايح اليوم (${byDate[dt].filter(x=>x.kind==="slaughter").length})</button>`:""}
-      <span class="dt">${s.inc?`<span class="sale-c">داخل <b class="n">${fmt(s.inc)}</b></span>`:""}${s.out?`<span class="expense-c">خارج <b class="n">${fmt(s.out)}</b></span>`:""}</span></div>`+
-    byDate[dt].map(e=>{
-      const K=KINDS[e.kind]||KINDS.sale, names=(e.items||[]).filter(x=>x.name);
-      const sl=e.kind==="slaughter";
-      const title=sl?(e.party||"ذبيحة"):names.length?names.slice(0,2).map(itemText).join("، ")+(names.length>2?` +${names.length-2}`:""):(e.category||K.label);
-      const sub=(sl?[e.category,e.phone,e.payment]:[names.length?e.category:"",e.party,e.ref_no?("#"+e.ref_no):"",e.payment]).filter(Boolean).map(esc).join(" · ");
-      return `<div class="row" data-id="${e.id}" tabindex="0">
-        <span class="what"><strong>${esc(title)}</strong>
-          <span class="meta"><span class="tag ${e.kind}">${K.label} ${K.prefix}-${e.id}</span>${sub}${e.fixed_id?" · ثابت":""}${(e.images||[]).length?` · 📎${e.images.length}`:""}</span></span>
-        <span class="amt num ${e.kind}-c">${e.kind==="meals"?`${qfmt((e.items||[]).reduce((s,x)=>s+(+x.qty||0),0))} وجبة`:(isIncome(e.kind)?"+":"−")+fmt(e.amount)}</span>
-        <button type="button" class="pr" data-pr="${e.id}" aria-label="طباعة الفاتورة ${K.prefix}-${e.id}" title="طباعة الفاتورة">🖨</button>
-      </div>`}).join("")
+      <span class="dt">${s.inc?`<span class="sale-c">داخل <b class="n">${fmt(s.inc)}</b></span>`:""}${s.out?`<span class="expense-c">خارج <b class="n">${fmt(s.out)}</b></span>`:""}</span></div>`;
+    const bar=`<div class="kbar">${groups.map(k=>{const arr=byDate[dt].filter(e=>e.kind===k), on=forceOpen||openK[dt]===k;
+      return `<button type="button" class="kb ${k}${on?" on":""}" data-day="${dt}" data-k="${k}" aria-expanded="${on}"><span>${KINDS[k].label} (${arr.length})</span><b class="n">${k==="meals"?qfmt(mealsQty(arr))+" وجبة":fmt(arr.reduce((a,e)=>a+(+e.amount||0),0))}</b></button>`}).join("")}</div>`;
+    const panels=groups.filter(k=>forceOpen||openK[dt]===k).map(k=>{const arr=byDate[dt].filter(e=>e.kind===k);
+      return `<div class="kpanel ${k}">${arr.map(rowHtml).join("")}<div class="dsum ${k}-c"><span>مجموع ${KINDS[k].label} — ${days[d.getDay()]} ${d.getDate()} ${months[d.getMonth()]}</span><b class="n">${k==="meals"?qfmt(mealsQty(arr))+" وجبة":fmt(arr.reduce((a,e)=>a+(+e.amount||0),0))}</b></div></div>`}).join("");
+    return head+bar+panels;
   }).join(""):`<div class="empty">لا يوجد تسجيلات${tab!=="all"?" من هذا النوع":""} لهذا الشهر.</div>`;
+  document.querySelectorAll(".kb").forEach(b=>b.onclick=()=>{const dt=b.dataset.day,k=b.dataset.k;openK[dt]=openK[dt]===k?null:k;render()});
   document.querySelectorAll(".row").forEach(r=>{const o=()=>edit(r.dataset.id);r.onclick=o;r.onkeydown=ev=>{if(ev.key==="Enter"&&ev.target===r)o()}});
   document.querySelectorAll("[data-kday]").forEach(b=>b.onclick=ev=>{ev.stopPropagation();openKashf(b.dataset.kday)});
   document.querySelectorAll("[data-pr]").forEach(b=>b.onclick=ev=>{ev.stopPropagation();const e=entries.find(x=>String(x.id)===b.dataset.pr);if(e)openInvoice(e)});
