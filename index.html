@@ -178,6 +178,12 @@ details.panel[open]>summary::after{content:"－"}
 .sheet .inote{margin-top:12px;font-size:13px}
 .kbtn{border:1px solid var(--slaughter);background:var(--slaughter-bg);color:var(--slaughter);border-radius:14px;padding:3px 10px;font:inherit;font-size:.78rem;font-weight:700;cursor:pointer}
 .kopen{grid-column:1/-1;display:flex;align-items:center;justify-content:center;gap:8px;padding:12px;border-radius:10px;border:1.5px solid var(--slaughter);background:var(--slaughter-bg);color:var(--slaughter);font:inherit;font-weight:700;cursor:pointer}
+.mcat{display:flex;align-items:center;gap:8px;padding:8px 10px;background:#efe7f7;border-top:1px solid var(--rule)}
+.mcat input{margin:0;padding:6px 8px;font-weight:700;color:#5b2d8a;background:#fff;flex:1}
+.mcat span{font-size:.8rem;color:#5b2d8a;font-weight:700;white-space:nowrap}
+.cath{font-weight:700;color:#5b2d8a;margin:12px 0 6px;padding-bottom:4px;border-bottom:1px solid #e3d6f0;display:flex;justify-content:space-between;font-size:.88rem}
+.sheet tr.cat td{background:#5b2d8a!important;color:#fff;font-weight:700;text-align:right}
+.sheet tr.csub td{background:#efe7f7!important;font-weight:700}
 .slrev{grid-column:1/-1;border:1.5px solid var(--slaughter);border-radius:10px;overflow:hidden;background:#fff}
 .slrev .slh{background:var(--slaughter-bg);color:var(--slaughter);font-weight:700;padding:10px 12px;font-size:.92rem}
 .slr{border-top:1px solid var(--rule);padding:8px;display:grid;grid-template-columns:1fr 1fr 32px;gap:6px;align-items:center}
@@ -472,9 +478,8 @@ function render(){
   bars("bS",g("sale","payment"),COLORS.sale);
   bars("bK",g("slaughter","party"),COLORS.slaughter);
   bars("bKp",g("slaughter","payment"),COLORS.slaughter);
-  const mAgg={}; entries.filter(e=>e.kind==="meals").forEach(e=>(e.items||[]).forEach(x=>{if(!x.name)return;const n=x.name.trim();mAgg[n]=mAgg[n]||{q:0,a:0};mAgg[n].q+= +x.qty||0;mAgg[n].a+= +x.total||0}));
-  const mRows=Object.entries(mAgg).sort((a,b)=>b[1].q-a[1].q), mTot=mRows.reduce((s,[,v])=>s+v.q,0), mMax=mRows.length?mRows[0][1].q:0;
-  $("bM").innerHTML=mRows.length?mRows.map(([n,v])=>`<div class="bl"><div><span>${esc(n)}</span><b class="n">${qfmt(v.q)} وجبة${v.a?` · ${fmt(v.a)}`:""}</b></div><div class="track"><i style="width:${mMax?v.q/mMax*100:0}%;background:${COLORS.meals}"></i></div></div>`).join("")+`<div class="bl" style="margin-top:10px"><div><b>المجموع</b><b class="n">${qfmt(mTot)} وجبة</b></div></div>`
+  const mg=groupMeals(entries.filter(e=>e.kind==="meals")), mTot=mg.reduce((s,g)=>s+g.q,0), mMax=Math.max(0,...mg.flatMap(g=>g.items.map(i=>i.q)));
+  $("bM").innerHTML=mg.length?mg.map(g=>`<div class="cath"><span>${esc(g.cat)}</span><span>${qfmt(g.q)} وجبة</span></div>`+g.items.map(it=>`<div class="bl"><div><span>${esc(it.name)}</span><b class="n">${qfmt(it.q)} وجبة${it.a?` · ${fmt(it.a)}`:""}</b></div><div class="track"><i style="width:${mMax?it.q/mMax*100:0}%;background:${COLORS.meals}"></i></div></div>`).join("")).join("")+`<div class="bl" style="margin-top:12px"><div><b>المجموع الكلي</b><b class="n">${qfmt(mTot)} وجبة</b></div></div>`
     :`<div class="none">لا يوجد. صوّر تقرير الأصناف المباعة من قسم المبيعات.</div>`;
   const credit=entries.filter(e=>e.payment==="آجل").reduce((a,e)=>{const key=`${KINDS[e.kind].label}${e.party?" — "+e.party:""}`;a[key]=(a[key]||0)+ +e.amount;return a},{});
   bars("bC",credit,"var(--ink)");
@@ -608,14 +613,14 @@ async function saveSlRows(){
 }
 
 /* ---------- عدد الوجبات من تقرير الأصناف ---------- */
-const MEALS_PROMPT='هذه صورة تقرير مبيعات الأصناف لمطعم (مثل Item Sales أو Product Mix أو Sales by Item من جهاز الكاشير، أو قائمة مكتوبة باليد). أرجع JSON فقط بهذا الشكل: {"date":"YYYY-MM-DD أو فارغ","items":[{"name":"اسم الصنف كما هو مكتوب","qty":0,"amount":0}]}. qty هو عدد الوجبات أو الكمية المباعة من الصنف، amount هو مبلغ مبيعات الصنف إن وجد وإلا 0. اقرأ كل الأصناف ولا تتخطى أي صنف، وتجاهل سطور المجاميع وعناوين التصنيفات. التاريخ إن كان مكتوباً يوم/شهر/سنة حوّله إلى YYYY-MM-DD. الأرقام إنجليزية بدون عملة.';
+const MEALS_PROMPT='هذه صورة تقرير مبيعات الأصناف لمطعم (مثل Item Sales أو Product Mix أو Sales by Item من جهاز الكاشير، أو قائمة مكتوبة باليد). أرجع JSON فقط بهذا الشكل: {"date":"YYYY-MM-DD أو فارغ","items":[{"category":"اسم التصنيف أو القسم","name":"اسم الصنف كما هو مكتوب","qty":0,"amount":0}]}. category هو عنوان القسم الذي يقع تحته الصنف في التقرير (مثل سلطات، دجاج، لحم، كنافة، مشروبات)، وإذا لم توجد أقسام في التقرير فصنّف كل صنف بنفسك في قسم مناسب من اسمه. qty هو عدد الوجبات أو الكمية المباعة من الصنف، amount هو مبلغ مبيعات الصنف إن وجد وإلا 0. اقرأ كل الأصناف ولا تتخطى أي صنف، وتجاهل سطور المجاميع وعناوين التصنيفات. التاريخ إن كان مكتوباً يوم/شهر/سنة حوّله إلى YYYY-MM-DD. الأرقام إنجليزية بدون عملة.';
 let mealRows=[], mealFile=null;
 $("scanMealsBtn").onclick=()=>{if(!db){toast("القراءة التلقائية تحتاج ربط Supabase");return}$("scanMealsFile").click()};
 $("scanMealsFile").onchange=async ev=>{
   const file=ev.target.files[0]; ev.target.value=""; if(!file) return;
   const data=await callReader(file,MEALS_PROMPT,$("scanMealsBtn"),"⏳ جاري عدّ الوجبات…");
   if(!data) return;
-  const rows=(Array.isArray(data.items)?data.items:[]).filter(x=>x&&x.name&&+x.qty>0).map(x=>({name:String(x.name).trim(),qty:+x.qty,amount:+x.amount||0}));
+  const rows=(Array.isArray(data.items)?data.items:[]).filter(x=>x&&x.name&&+x.qty>0).map(x=>({cat:String(x.category||"أخرى").trim()||"أخرى",name:String(x.name).trim(),qty:+x.qty,amount:+x.amount||0}));
   if(!rows.length){toast("لم أجد أصنافاً واضحة، جرّب صورة أوضح");return}
   if(/^\d{4}-\d{2}-\d{2}$/.test(data.date||"")) $("date").value=data.date;
   mealRows=rows; mealFile=file; drawMealsRev();
@@ -626,17 +631,21 @@ function drawMealsRev(){
   if(!mealRows.length){box.hidden=true;box.innerHTML="";return}
   const tq=()=>mealRows.reduce((s,r)=>s+(+r.qty||0),0);
   box.hidden=false;
-  box.innerHTML=`<div class="slh">🍽 الوجبات المباعة بتاريخ ${dmy($("date").value)} — راجع ثم احفظ</div>`+
-    mealRows.map((r,i)=>`<div class="slr">
+  const cats=[...new Set(mealRows.map(r=>r.cat||"أخرى"))];
+  const rowHtml=(r,i)=>`<div class="slr">
       <input class="nm" data-i="${i}" data-f="name" value="${esc(r.name)}" aria-label="الصنف">
       <button type="button" class="x rm" data-rm="${i}" aria-label="حذف">×</button>
       <input class="c1" type="number" data-i="${i}" data-f="qty" value="${r.qty}" step="any" min="0" inputmode="decimal" aria-label="عدد الوجبات" placeholder="العدد">
       <input class="c2" type="number" data-i="${i}" data-f="amount" value="${r.amount||""}" step="0.01" min="0" inputmode="decimal" aria-label="المبلغ" placeholder="المبلغ (اختياري)">
-    </div>`).join("")+
+    </div>`;
+  box.innerHTML=`<div class="slh">🍽 الوجبات المباعة بتاريخ ${dmy($("date").value)} — راجع ثم احفظ</div>`+
+    cats.map(c=>{const idx=mealRows.map((r,i)=>[r,i]).filter(([r])=>(r.cat||"أخرى")===c);
+      return `<div class="mcat"><input data-cat="${esc(c)}" value="${esc(c)}" aria-label="اسم التصنيف"><span>${qfmt(idx.reduce((s,[r])=>s+(+r.qty||0),0))} وجبة</span></div>`+idx.map(([r,i])=>rowHtml(r,i)).join("")}).join("")+
     `<div class="slf"><span>مجموع الوجبات</span><span class="num" id="mealTot">${qfmt(tq())}</span></div>
      <div class="actions"><button type="button" class="btn" id="mealSave">حفظ عدد الوجبات</button><button type="button" class="btn ghost" id="mealCancel">إلغاء</button></div>`;
   box.querySelectorAll("[data-f]").forEach(el=>{const h=()=>{mealRows[+el.dataset.i][el.dataset.f]=el.value;$("mealTot").textContent=qfmt(tq())};el.oninput=h;el.onchange=h});
   box.querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>{mealRows.splice(+b.dataset.rm,1);drawMealsRev()});
+  box.querySelectorAll("[data-cat]").forEach(inp=>inp.onchange=()=>{const old=inp.dataset.cat,nw=inp.value.trim()||"أخرى";mealRows.forEach(r=>{if((r.cat||"أخرى")===old)r.cat=nw});drawMealsRev()});
   $("mealCancel").onclick=()=>{mealRows=[];mealFile=null;drawMealsRev()};
   $("mealSave").onclick=saveMeals;
 }
@@ -644,7 +653,7 @@ async function saveMeals(){
   const btn=$("mealSave"); btn.disabled=true; btn.textContent="جاري الحفظ…";
   try{
     const day=$("date").value;
-    const its=mealRows.filter(r=>String(r.name).trim()&&+r.qty>0).map(r=>({name:String(r.name).trim(),qty:+r.qty,unit:"وجبة",price:Math.round((+r.amount||0)*100)/100,total:Math.round((+r.amount||0)*100)/100}));
+    const its=mealRows.filter(r=>String(r.name).trim()&&+r.qty>0).map(r=>({cat:r.cat||"أخرى",name:String(r.name).trim(),qty:+r.qty,unit:"وجبة",price:Math.round((+r.amount||0)*100)/100,total:Math.round((+r.amount||0)*100)/100}));
     if(!its.length){toast("لا توجد أصناف للحفظ");return}
     if(db){
       const {data:ex}=await db.from(TABLE).select("id").eq("kind","meals").eq("inv_date",day);
@@ -745,7 +754,7 @@ function edit(id){
   $("pay").value=e.payment||"كاش"; $("vat").checked=(+e.vat||0)>0; $("note").value=e.note||"";
   $("phone").value=e.phone||""; $("heads").value=e.kind==="slaughter"?(e.category||""):"";
   photos=(e.images||[]).map(url=>({url})); removed=[]; drawThumbs();
-  items=(e.items&&e.items.length)?e.items.map(x=>({name:x.name||"",qty:x.qty,unit:x.unit||"حبة",price:(x.total!=null?x.total:x.price)})):[blankItem()];
+  items=(e.items&&e.items.length)?e.items.map(x=>({cat:x.cat,name:x.name||"",qty:x.qty,unit:x.unit||"حبة",price:(x.total!=null?x.total:x.price)})):[blankItem()];
   drawItems(); if(!(e.items&&e.items.length)) $("amount").value=e.amount;
   $("formTitle").textContent=`تعديل ${KINDS[e.kind].label} ${KINDS[e.kind].prefix}-${e.id}`; $("saveBtn").textContent="حفظ التعديل"; $("delBtn").hidden=false; $("invPrint").hidden=false;
   $("f").scrollIntoView({behavior:"smooth"});
@@ -755,7 +764,7 @@ $("f").onsubmit=async ev=>{
   ev.preventDefault();
   const btn=$("saveBtn"); btn.disabled=true; btn.textContent="جاري الحفظ…";
   try{
-    const clean=kind==="slaughter"?[]:items.filter(it=>String(it.name).trim()||+it.price).map(it=>({name:String(it.name).trim(),qty:+it.qty||0,unit:it.unit||"حبة",price:Math.round((+it.price||0)*100)/100,total:Math.round((+it.price||0)*100)/100}));
+    const clean=kind==="slaughter"?[]:items.filter(it=>String(it.name).trim()||+it.price).map(it=>({...(it.cat?{cat:it.cat}:{}),name:String(it.name).trim(),qty:+it.qty||0,unit:it.unit||"حبة",price:Math.round((+it.price||0)*100)/100,total:Math.round((+it.price||0)*100)/100}));
     const amount=clean.length?Math.round(itemsTotal()*100)/100:+$("amount").value;
     if(kind==="slaughter"&&!$("heads").value.trim()){toast("اكتب عدد الذبايح / النوع");return}
     if(!(amount>0)&&!(kind==="meals"&&clean.length)){toast("أدخل الأصناف أو المبلغ");return}
@@ -937,20 +946,29 @@ function buildKashf(list,from,to){
     ${Object.keys(byPay).length?`<table class="sum2">${Object.entries(byPay).sort((a,b)=>b[1]-a[1]).map(([p,v])=>`<tr><td>${esc(p)}</td><td><span class="p">${fmt(v)}</span></td></tr>`).join("")}</table>`:""}
     <div class="sig"><span>توقيع المحاسب: ............</span><span>توقيع المدير: ............</span></div>`;
 }
+function groupMeals(list){
+  const cats={};
+  list.forEach(e=>(e.items||[]).forEach(x=>{if(!x.name)return;const c=(x.cat||"أخرى").trim(),n=x.name.trim();
+    cats[c]=cats[c]||{cat:c,q:0,a:0,m:{}};const it=cats[c].m[n]=cats[c].m[n]||{name:n,q:0,a:0};
+    it.q+= +x.qty||0; it.a+= +x.total||0; cats[c].q+= +x.qty||0; cats[c].a+= +x.total||0;}));
+  return Object.values(cats).map(c=>({cat:c.cat,q:c.q,a:c.a,items:Object.values(c.m).sort((a,b)=>b.q-a.q)}));
+}
 function buildMeals(list,from,to){
   repTitle="تقرير الوجبات المباعة";
   const multi=from!==to, d=new Date(from+"T00:00:00");
-  const agg={}; list.forEach(e=>(e.items||[]).forEach(x=>{if(!x.name)return;const n=x.name.trim();agg[n]=agg[n]||{q:0,a:0};agg[n].q+= +x.qty||0;agg[n].a+= +x.total||0}));
-  const rows=Object.entries(agg).sort((a,b)=>b[1].q-a[1].q);
-  const tq=rows.reduce((s,[,v])=>s+v.q,0), ta=rows.reduce((s,[,v])=>s+v.a,0);
-  const lines=rows.slice(); while(lines.length<15) lines.push(null);
+  const groups=groupMeals(list);
+  const tq=groups.reduce((s,g)=>s+g.q,0), ta=groups.reduce((s,g)=>s+g.a,0), nItems=groups.reduce((s,g)=>s+g.items.length,0);
+  let n=0;
+  const body=groups.map(g=>`<tr class="cat"><td colspan="4">${esc(g.cat)}</td></tr>`+
+    g.items.map(it=>`<tr><td>${++n}</td><td>${esc(it.name)}</td><td><b>${qfmt(it.q)}</b></td><td><span class="p">${it.a?fmt(it.a):""}</span></td></tr>`).join("")+
+    `<tr class="csub"><td></td><td>مجموع ${esc(g.cat)}</td><td>${qfmt(g.q)}</td><td><span class="p">${g.a?fmt(g.a):""}</span></td></tr>`).join("");
   $("sheet").className="sheet";
   $("sheet").innerHTML=`<div class="st">${repTitle}</div>
     <div class="sd">${multi?`من ${slashDate(from)} إلى ${slashDate(to)}`:`${days[d.getDay()]} — التاريخ: ${slashDate(from)}`}</div>
     <table><colgroup><col style="width:8%"><col style="width:52%"><col style="width:20%"><col style="width:20%"></colgroup>
       <thead><tr><th>م</th><th>الصنف</th><th>عدد الوجبات</th><th>المبلغ</th></tr></thead>
-      <tbody>${lines.map((l,i)=>l?`<tr><td>${i+1}</td><td>${esc(l[0])}</td><td><b>${qfmt(l[1].q)}</b></td><td><span class="p">${l[1].a?fmt(l[1].a):""}</span></td></tr>`:`<tr><td></td><td></td><td></td><td></td></tr>`).join("")}
-      <tr class="tot"><td></td><td>المجموع (${rows.length} صنف)</td><td>${qfmt(tq)}</td><td><span class="p">${ta?fmt(ta):""}</span></td></tr></tbody>
+      <tbody>${body||`<tr><td colspan="4">لا توجد وجبات مسجلة في هذه الفترة</td></tr>`}
+      <tr class="tot"><td></td><td>المجموع الكلي (${nItems} صنف)</td><td>${qfmt(tq)}</td><td><span class="p">${ta?fmt(ta):""}</span></td></tr></tbody>
     </table>
     <div class="sig"><span>توقيع المحاسب: ............</span><span>توقيع المدير: ............</span></div>`;
 }
