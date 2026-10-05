@@ -549,17 +549,17 @@ $("scanFile").onchange=async ev=>{
     const image=await blobToB64(await compress(file));
     let data,error,msg="";
     for(let attempt=0;attempt<3;attempt++){
-      ({data,error}=await db.functions.invoke("read-invoice",{body:{image,media_type:"image/jpeg"}}));
+      ({data,error}=await db.functions.invoke("read-invoice",{body:{image,media_type:"image/jpeg",models:["gemini-flash-latest","gemini-flash-lite-latest","gemini-2.5-flash"]}}));
       if(!error&&data&&!data.error) break;
       msg=(data&&data.error)||(error&&error.message)||"خطأ";
       try{const j=await error.context.json(); if(j&&j.error) msg=j.error}catch(_){}
-      const busy=/quota|rate|429|503|overload|UNAVAILABLE|RESOURCE_EXHAUSTED/i.test(msg);
+      const busy=/quota|rate|429|503|overload|UNAVAILABLE|RESOURCE_EXHAUSTED|demand|try again|غير مكتمل/i.test(msg);
       if(!busy||attempt===2) break;
       btn.innerHTML=`⏳ الخدمة مشغولة، إعادة المحاولة (${attempt+2}/3)…`;
       await new Promise(r=>setTimeout(r,(attempt+1)*8000));
     }
     if(error||!data||data.error){
-      const busy=/quota|rate|429|503|overload|UNAVAILABLE|RESOURCE_EXHAUSTED/i.test(msg);
+      const busy=/quota|rate|429|503|overload|UNAVAILABLE|RESOURCE_EXHAUSTED|demand|try again|غير مكتمل/i.test(msg);
       toast(busy?"الخدمة المجانية مشغولة أو وصلت الحد المؤقت، انتظر دقيقة وجرّب مرة ثانية":"تعذّرت قراءة الفاتورة: "+msg);
       return;
     }
