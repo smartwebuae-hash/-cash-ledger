@@ -175,12 +175,15 @@ details.panel[open]>summary::after{content:"－"}
 .sheet .info td{border:1px solid #b7c6d6;padding:5px 10px;height:auto;text-align:right}
 .sheet .info td.k{background:#eaf1fa;font-weight:500;width:18%}
 .sheet .inote{margin-top:12px;font-size:13px}
+.kbtn{border:1px solid var(--slaughter);background:var(--slaughter-bg);color:var(--slaughter);border-radius:14px;padding:3px 10px;font:inherit;font-size:.78rem;font-weight:700;cursor:pointer}
+.kopen{grid-column:1/-1;display:flex;align-items:center;justify-content:center;gap:8px;padding:12px;border-radius:10px;border:1.5px solid var(--slaughter);background:var(--slaughter-bg);color:var(--slaughter);font:inherit;font-weight:700;cursor:pointer}
 .slrev{grid-column:1/-1;border:1.5px solid var(--slaughter);border-radius:10px;overflow:hidden;background:#fff}
 .slrev .slh{background:var(--slaughter-bg);color:var(--slaughter);font-weight:700;padding:10px 12px;font-size:.92rem}
 .slr{border-top:1px solid var(--rule);padding:8px;display:grid;grid-template-columns:1fr 1fr 32px;gap:6px;align-items:center}
 .slr input,.slr select{margin:0;padding:8px 6px;font-size:.9rem}
 .slr .nm{grid-column:1/3}
 .slr .rm{grid-row:1;grid-column:3}
+.slr .c1{grid-column:1}.slr .c2{grid-column:2/4}
 .slrev .slf{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:var(--ink);color:#fff;font-weight:700}
 .slrev .actions{padding:0 10px 10px}
 .sheet.ks{padding:30px 26px}
@@ -247,6 +250,7 @@ details.panel[open]>summary::after{content:"－"}
       <label><span id="partyLabel">العميل</span><input type="text" id="party" placeholder="اختياري"></label>
       <label class="nsl">التصنيف<input type="text" id="cat" list="cats" placeholder="اختر أو اكتب"><datalist id="cats"></datalist></label>
       <label class="sl" hidden>رقم الهاتف<input type="tel" id="phone" inputmode="tel" placeholder="05xxxxxxxx" dir="ltr"></label>
+      <button type="button" class="kopen sl" id="kashfDay" hidden>📄 كشف ذبايح هذا اليوم — طباعة أو واتساب PDF</button>
       <button type="button" class="scan sl" id="scanSlBtn" hidden>📷 صوّر كشف الذبايح <small>— إضافة كل العملاء تلقائياً</small></button>
       <input type="file" id="scanSlFile" accept="image/*" hidden>
       <div class="slrev" id="slRev" hidden></div>
@@ -435,6 +439,7 @@ function render(){
   $("rows").innerHTML=dates.length?dates.map(dt=>{
     const d=new Date(dt+"T00:00:00"), s=sums(byDate[dt]);
     return `<div class="dh"><strong>${days[d.getDay()]} ${d.getDate()} ${months[d.getMonth()]}</strong>
+      ${byDate[dt].some(x=>x.kind==="slaughter")?`<button type="button" class="kbtn" data-kday="${dt}">🐑 كشف ذبايح اليوم (${byDate[dt].filter(x=>x.kind==="slaughter").length})</button>`:""}
       <span class="dt">${s.inc?`<span class="sale-c">داخل <b class="n">${fmt(s.inc)}</b></span>`:""}${s.out?`<span class="expense-c">خارج <b class="n">${fmt(s.out)}</b></span>`:""}</span></div>`+
     byDate[dt].map(e=>{
       const K=KINDS[e.kind]||KINDS.sale, names=(e.items||[]).filter(x=>x.name);
@@ -449,6 +454,7 @@ function render(){
       </div>`}).join("")
   }).join(""):`<div class="empty">لا يوجد تسجيلات${tab!=="all"?" من هذا النوع":""} لهذا الشهر.</div>`;
   document.querySelectorAll(".row").forEach(r=>{const o=()=>edit(r.dataset.id);r.onclick=o;r.onkeydown=ev=>{if(ev.key==="Enter"&&ev.target===r)o()}});
+  document.querySelectorAll("[data-kday]").forEach(b=>b.onclick=ev=>{ev.stopPropagation();openKashf(b.dataset.kday)});
   document.querySelectorAll("[data-pr]").forEach(b=>b.onclick=ev=>{ev.stopPropagation();const e=entries.find(x=>String(x.id)===b.dataset.pr);if(e)openInvoice(e)});
 
   const g=(k,field)=>entries.filter(e=>e.kind===k).reduce((a,e)=>{const key=e[field]||"غير محدد";a[key]=(a[key]||0)+ +e.amount;return a},{});
@@ -541,10 +547,10 @@ function drawSlRev(){
     slRows.map((r,i)=>`<div class="slr">
       <input class="nm" data-i="${i}" data-f="name" value="${esc(r.name)}" placeholder="الاسم / المكان" aria-label="الاسم">
       <button type="button" class="x rm" data-rm="${i}" aria-label="حذف الصف">×</button>
-      <input data-i="${i}" data-f="phone" value="${esc(r.phone)}" placeholder="الهاتف" dir="ltr" inputmode="tel" aria-label="الهاتف">
-      <input data-i="${i}" data-f="heads" value="${esc(r.heads)}" placeholder="عدد الذبايح" aria-label="عدد الذبايح">
-      <select data-i="${i}" data-f="payment" aria-label="طريقة الدفع">${[...new Set([...PAYS,r.payment])].map(p=>`<option${p===r.payment?" selected":""}>${esc(p)}</option>`).join("")}</select>
-      <input type="number" data-i="${i}" data-f="amount" value="${r.amount}" step="0.01" min="0" inputmode="decimal" placeholder="السعر" aria-label="السعر">
+      <input class="c1" data-i="${i}" data-f="phone" value="${esc(r.phone)}" placeholder="الهاتف" dir="ltr" inputmode="tel" aria-label="الهاتف">
+      <input class="c2" data-i="${i}" data-f="heads" value="${esc(r.heads)}" placeholder="عدد الذبايح" aria-label="عدد الذبايح">
+      <select class="c1" data-i="${i}" data-f="payment" aria-label="طريقة الدفع">${[...new Set([...PAYS,r.payment])].map(p=>`<option${p===r.payment?" selected":""}>${esc(p)}</option>`).join("")}</select>
+      <input class="c2" type="number" data-i="${i}" data-f="amount" value="${r.amount}" step="0.01" min="0" inputmode="decimal" placeholder="السعر" aria-label="السعر">
     </div>`).join("")+
     `<div class="slf"><span>المجموع</span><span class="num" id="slTot">${fmt(total)}</span></div>
      <div class="actions"><button type="button" class="btn" id="slSaveAll">حفظ الكل (${slRows.length})</button><button type="button" class="btn ghost" id="slCancel">إلغاء</button></div>`;
@@ -782,7 +788,7 @@ function buildKashf(list,from,to){
   $("sheet").innerHTML=`<div class="kt">كشف الذبايح</div>
     <div class="kd">${multi?`من ${dmy(from)} إلى ${dmy(to)}`:`${days[d.getDay()]} ${dmy(from)}`}</div>
     <table><thead><tr><th style="width:5%">م</th>${multi?'<th style="width:11%">التاريخ</th>':""}<th>الاسم / المكان</th><th style="width:19%">رقم الهاتف</th><th style="width:17%">عدد الذبايح</th><th style="width:15%">طريقة الدفع</th><th style="width:12%">السعر</th></tr></thead>
-    <tbody>${rows.map((e,i)=>`<tr><td>${i+1}</td>${multi?`<td>${dmy(e.inv_date)}</td>`:""}<td class="nm">${esc(e.party||"")}</td><td><span class="p">${esc(e.phone||"")}</span></td><td>${esc(e.category||"")}</td><td>${esc(e.payment||"")}</td><td class="am"><span class="p">${fmt(e.amount).replace(/\.00$/,"")}</span></td></tr>`).join("")}
+    <tbody>${rows.map((e,i)=>`<tr><td>${i+1}</td>${multi?`<td>${dmy(e.inv_date)}</td>`:""}<td class="nm">${esc(e.party||"")}${e.note?`<br><small style="font-weight:500">${esc(e.note)}</small>`:""}</td><td><span class="p">${esc(e.phone||"")}</span></td><td>${esc(e.category||"")}</td><td>${esc(e.payment||"")}</td><td class="am"><span class="p">${fmt(e.amount).replace(/\.00$/,"")}</span></td></tr>`).join("")}
     ${Array.from({length:pad},(_,i)=>`<tr><td>${rows.length+i+1}</td>${"<td></td>".repeat(cols-1)}</tr>`).join("")}
     <tr class="tot"><td colspan="${cols-1}">المجموع (${rows.length} عميل)</td><td class="am"><span class="p">${fmt(total).replace(/\.00$/,"")}</span></td></tr></tbody></table>
     ${Object.keys(byPay).length?`<table class="sum2">${Object.entries(byPay).sort((a,b)=>b[1]-a[1]).map(([p,v])=>`<tr><td>${esc(p)}</td><td><span class="p">${fmt(v)}</span></td></tr>`).join("")}</table>`:""}
@@ -831,6 +837,12 @@ async function buildReport(){
 $("repBtn").onclick=()=>{repSingle=null;$("rep").classList.remove("single");const t=iso(new Date());$("rFrom").value=t;$("rTo").value=t;$("rep").hidden=false;document.body.style.overflow="hidden";buildReport()};
 $("rClose").onclick=()=>{$("rep").hidden=true;document.body.style.overflow=""};
 ["rFrom","rTo","rKind"].forEach(id=>$(id).onchange=()=>{repSingle=null;$("rep").classList.remove("single");buildReport()});
+function openKashf(day){
+  repSingle=null; $("rep").classList.remove("single");
+  $("rFrom").value=day; $("rTo").value=day; $("rKind").value="slaughter";
+  $("rep").hidden=false; document.body.style.overflow="hidden"; buildReport();
+}
+$("kashfDay").onclick=()=>openKashf($("date").value||iso(new Date()));
 $("invPrint").onclick=()=>{const e=entries.find(x=>x.id===editingId);if(e)openInvoice(e)};
 function openInvoice(e){
   const K=KINDS[e.kind];
